@@ -1,0 +1,124 @@
+name: Wuchuang - Daily upstream sync and tests
+
+on:
+  schedule:
+    # GitHub cron is UTC; this is about 10:17 in China (UTC+8).
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: wuchuang-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync-test-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      GOWORK: 'off'
+
+    steps:
+      - name: Check out fork main without stored credentials
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare a merge candidate, fail closed on conflicts
+        id: prepare
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/QuantumNous/new-api.git
+          git fetch --no-tags upstream main
+          git fetch --no-tags origin main
+
+          if git merge-base --is-ancestor upstream/main origin/main; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+            echo 'Official main is already included in fork main.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git checkout -B automation/upstream-sync origin/main
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort || true
+            echo '::error::Merge conflict. Your main branch has not been changed. Resolve the changes manually.'
+            exit 1
+          fi
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+          echo "Merged candidate commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+
+      # Tests happen BEFORE branch push/PR creation, because GitHub does not
+      # trigger ordinary pull_request workflows from a PR opened with GITHUB_TOKEN.
+      - name: Set up Go
+        if: steps.prepare.outputs.changed == 'true'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+            tokenkit/go.sum
+
+      - name: Vet, build and test backend
+        if: steps.prepare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p web/dist
+          touch web/dist/index.html
+          go vet ./...
+          go build ./...
+          (cd relaykit && go vet ./... && go build ./...)
+          (cd tokenkit && go vet ./... && go build ./...)
+          make test
+
+      - name: Set up Bun
+        if: steps.prepare.outputs.changed == 'true'
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
+
+      - name: Typecheck, test and build frontend
+        if: steps.prepare.outputs.changed == 'true'
+        shell: bash
+        working-directory: web
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run test
+          bun run build
+
+      - name: Open or refresh review PR after passing tests
+        if: steps.prepare.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The automation/upstream-sync branch is exclusively managed by this workflow.
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          if git ls-remote --exit-code --heads origin refs/heads/automation/upstream-sync >/dev/null; then
+            git fetch origin refs/heads/automation/upstream-sync:refs/remotes/origin/automation/upstream-sync
+          fi
+          git push --force-with-lease origin HEAD:refs/heads/automation/upstream-sync
+
+          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --head automation/upstream-sync --base main --json number \
+            --jq '.[0].number // empty')"
+          if [ -z "$PR_NUMBER" ]; then
+            gh pr create --repo "$GITHUB_REPOSITORY" \
+              --base main --head automation/upstream-sync \
+              --title 'chore: review New API upstream updates' \
+              --body "Upstream merge passed backend and frontend tests in this workflow. Review changes before merging. Keep the **Create a merge commit** history (avoid squash) for correct future update detection. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          else
+            echo "Updated existing PR #${PR_NUMBER}" >> "$GITHUB_STEP_SUMMARY"
+          fi
