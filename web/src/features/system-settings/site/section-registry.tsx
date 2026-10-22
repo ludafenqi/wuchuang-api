@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { FooterManagement } from '../footer/section'
 import { SystemInfoSection } from '../general/system-info-section'
 import {
   parseHeaderNavModules,
@@ -30,6 +31,11 @@ import type { SiteSettings } from '../types'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const SITE_SECTIONS = [
+  {
+    id: 'footer',
+    titleKey: 'Footer management',
+    build: (settings: SiteSettings) => <FooterManagement settings={settings} />,
+  },
   {
     id: 'system-info',
     titleKey: 'System Information',

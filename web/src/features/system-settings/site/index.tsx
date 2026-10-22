@@ -29,6 +29,7 @@ const defaultSiteSettings: SiteSettings = {
   SystemName: 'New API',
   Logo: '',
   Footer: '',
+  FooterConfig: '',
   About: '',
   HomePageContent: '',
   ServerAddress: '',

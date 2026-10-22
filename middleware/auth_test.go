@@ -91,6 +91,42 @@ func createMiddlewarePATUser(t *testing.T, username, token string) *model.User {
 	return user
 }
 
+func TestFooterOptionsRequireRootSession(t *testing.T) {
+	setupDashboardAuthMiddlewareTest(t)
+	gin.SetMode(gin.TestMode)
+	for _, test := range []struct {
+		name   string
+		role   int
+		status int
+	}{
+		{"anonymous", 0, http.StatusUnauthorized},
+		{"user", common.RoleCommonUser, http.StatusForbidden},
+		{"admin", common.RoleAdminUser, http.StatusForbidden},
+		{"root", common.RoleRootUser, http.StatusNoContent},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			router := gin.New()
+			called := false
+			router.PUT("/api/option/", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
+			request := httptest.NewRequest(http.MethodPut, "/api/option/", strings.NewReader(`{"key":"FooterConfig","value":"{}"}`))
+			if test.role != 0 {
+				user := createMiddlewarePATUser(t, "footer-"+test.name, "unused-footer-"+test.name)
+				require.NoError(t, model.DB.Model(user).Update("role", test.role).Error)
+				now := time.Now().Unix()
+				session := &model.UserSession{SID: "footer-session-" + test.name, UserID: user.Id, Version: 1, UserAuthVersion: 1, Status: model.UserSessionStatusActive, RefreshHash: "unused-refresh-" + test.name, LoginMethod: "password", LastActiveAt: now, ExpiresAt: now + 3600}
+				require.NoError(t, model.CreateUserSession(session))
+				token, _, err := service.IssueAccessToken(service.AuthIdentity{UserID: user.Id, SessionID: session.SID, UserAuthVersion: 1, SessionVersion: 1})
+				require.NoError(t, err)
+				request.Header.Set("Authorization", "Bearer "+token)
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			assert.Equal(t, test.status, response.Code)
+			assert.Equal(t, test.role == common.RoleRootUser, called)
+		})
+	}
+}
+
 // Read-only API key routes (/api/usage/token, /api/log/token) are called by
 // scripts, not the web console, so their errors are translated by the backend
 // in the language the request asks for.
