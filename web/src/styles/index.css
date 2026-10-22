@@ -30,6 +30,24 @@ For commercial licensing, please contact support@quantumnous.com
 @import './theme.css';
 @import './theme-presets.css';
 
+/* Preview theme is local, so a light preview remains light in a dark dashboard. */
+.footer-preview-light {
+  --background: #ffffff;
+  --foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #52525b;
+  --accent: #eef2ff;
+  --border: #e4e4e7;
+}
+.footer-preview.dark {
+  --background: #18181b;
+  --foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27273b;
+  --border: #3f3f46;
+}
+
 @layer base {
   :root {
     /* Mobile browser toolbars change dvh; 50% positioning and vh still use

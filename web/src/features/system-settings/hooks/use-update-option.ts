@@ -28,6 +28,14 @@ import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = new Set([
+  'SystemName',
+  'Logo',
+  'Footer',
+  'FooterConfig',
+  'About',
+  'general_setting.docs_link',
+  'legal.user_agreement',
+  'legal.privacy_policy',
   'HeaderNavModules',
   'SidebarModulesAdmin',
   'Notice',
@@ -57,19 +65,27 @@ export function useUpdateOption() {
   return useMutation({
     mutationFn: async (request: UpdateOptionRequest) =>
       requireServerSuccess(await updateSystemOption(request)),
-    onSuccess: (data, variables) => {
+    onSuccess: async (data, variables) => {
       if (data.success) {
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
+        if (variables.key === 'About') {
+          queryClient.invalidateQueries({ queryKey: ['about-content'] })
+        }
 
         // If updating frontend-display-related config, also refresh status
         if (STATUS_RELATED_KEYS.has(variables.key)) {
-          queryClient.invalidateQueries({ queryKey: ['status'] })
           try {
             window.localStorage.removeItem('status')
           } catch {
             /* empty */
           }
+          // Headers read the persisted store even when no status query is mounted.
+          // Refetch inactive entries too, and let fetchStatus publish the new value.
+          await queryClient.invalidateQueries({
+            queryKey: ['status'],
+            refetchType: 'all',
+          })
         }
 
         toast.success(i18next.t('Setting updated successfully'))

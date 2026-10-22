@@ -145,6 +145,7 @@ export type SiteSettings = {
   SystemName: string
   Logo: string
   Footer: string
+  FooterConfig: string
   About: string
   HomePageContent: string
   ServerAddress: string

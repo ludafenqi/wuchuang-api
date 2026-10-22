@@ -88,6 +88,8 @@ export interface ApiResponse<T = unknown> {
 // ============================================================================
 
 export interface SystemStatus {
+  footer_config?: string
+  docs_link?: string
   success?: boolean
   message?: string
   data?: {
