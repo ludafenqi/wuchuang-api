@@ -36,7 +36,7 @@ export function CTA(props: CTAProps) {
   }
 
   return (
-    <section className='relative z-10 overflow-hidden px-6 py-24 md:py-32'>
+    <section className='wcai-cta relative z-10 overflow-hidden px-6 py-24 md:py-32'>
       {/* Gradient mesh background */}
       <div
         aria-hidden
@@ -56,7 +56,7 @@ export function CTA(props: CTAProps) {
         <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-4xl'>
           {t('Ready to simplify')}
           <br />
-          <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
+          <span className='wcai-brand-text bg-clip-text text-transparent'>
             {t('your AI integration?')}
           </span>
         </h2>
