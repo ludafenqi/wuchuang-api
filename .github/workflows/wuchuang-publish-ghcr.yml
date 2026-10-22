@@ -98,6 +98,8 @@ jobs:
           context: .
           platforms: linux/amd64
           push: true
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
           tags: ghcr.io/ludafenqi/wuchuang-api:sha-${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/ludafenqi/wuchuang-api
