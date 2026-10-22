@@ -101,10 +101,14 @@ describe('footer templates', () => {
           'Frontend design and development by New API contributors.'
         )
       ).toBeVisible()
-      expect(screen.getByRole('link', { name: 'New API' })).toHaveAttribute(
-        'href',
-        'https://github.com/QuantumNous/new-api'
-      )
+      expect(
+        within(footer).queryByRole('link', { name: 'New API' })
+      ).not.toBeInTheDocument()
+      for (const link of within(footer).getAllByRole('link', {
+        name: 'Open-source notice',
+      })) {
+        expect(link).toHaveAttribute('href', '/open-source')
+      }
       expect(
         within(screen.getByRole('navigation')).getByRole('link', {
           name: 'Model Square',
@@ -169,7 +173,9 @@ describe('footer templates', () => {
       'noopener noreferrer'
     )
     expect(screen.queryByText('Brand')).not.toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'New API' })).toBeVisible()
+    expect(
+      screen.getByRole('link', { name: 'Open-source notice' })
+    ).toHaveAttribute('href', '/open-source')
     view.rerender(
       <BrandFooter
         config={{ ...config, legacyMode: 'append' }}
