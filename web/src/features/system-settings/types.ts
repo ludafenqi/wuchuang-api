@@ -34,6 +34,11 @@ export type UpdateOptionRequest = {
   value: string | boolean | number
 }
 
+export type UpdateFooterOptionsRequest = Pick<
+  SiteSettings,
+  'SystemName' | 'FooterConfig'
+>
+
 export type UpdateOptionResponse = {
   success: boolean
   message: string

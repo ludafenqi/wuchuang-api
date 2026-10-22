@@ -84,8 +84,10 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			require.NoError(t, err)
 			sqlDB.SetMaxOpenConns(1)
 			t.Cleanup(func() { _ = sqlDB.Close() })
-			previousDB, previousMap, previousFooter := DB, common.OptionMap, common.Footer
-			t.Cleanup(func() { DB, common.OptionMap, common.Footer = previousDB, previousMap, previousFooter })
+			previousDB, previousMap, previousFooter, previousName := DB, common.OptionMap, common.Footer, common.SystemName
+			t.Cleanup(func() {
+				DB, common.OptionMap, common.Footer, common.SystemName = previousDB, previousMap, previousFooter, previousName
+			})
 			DB, common.OptionMap = db, map[string]string{}
 			require.NoError(t, db.AutoMigrate(&Option{}))
 			var version string
@@ -111,6 +113,31 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			assert.Equal(t, "<p>Existing HTML</p>", stored["Footer"])
 			assert.Equal(t, "Original about content", stored["About"])
 			assert.Equal(t, stored[system_setting.FooterConfigKey], common.OptionMap[system_setting.FooterConfigKey])
+			require.NoError(t, UpdateOption("SystemName", "Saved brand"))
+			writes := 0
+			require.NoError(t, db.Callback().Update().Before("gorm:update").Register("footer:batch_failure", func(tx *gorm.DB) {
+				writes++
+				if writes == 2 {
+					tx.AddError(errors.New("second branding write failed"))
+				}
+			}))
+			assert.Error(t, UpdateOptionsBulk(map[string]string{"SystemName": "Unsaved brand", system_setting.FooterConfigKey: ""}))
+			assert.Equal(t, 2, writes)
+			assert.Equal(t, "Saved brand", common.SystemName)
+			assert.Equal(t, validFooterConfig, common.OptionMap[system_setting.FooterConfigKey])
+			var afterFailure []Option
+			require.NoError(t, db.Find(&afterFailure).Error)
+			for _, option := range afterFailure {
+				if option.Key == "SystemName" {
+					assert.Equal(t, "Saved brand", option.Value)
+				}
+				if option.Key == system_setting.FooterConfigKey {
+					assert.Equal(t, validFooterConfig, option.Value)
+				}
+			}
+			require.NoError(t, db.Callback().Update().Remove("footer:batch_failure"))
+			require.NoError(t, UpdateOptionsBulk(map[string]string{"SystemName": "Updated brand", system_setting.FooterConfigKey: validFooterConfig}))
+			assert.Equal(t, "Updated brand", common.SystemName)
 			require.NoError(t, db.Callback().Update().Before("gorm:update").Register("footer:storage_failure", func(tx *gorm.DB) { tx.AddError(errors.New("test storage failure")) }))
 			assert.Error(t, UpdateOption("Footer", "unsaved HTML"))
 			assert.Equal(t, "<p>Existing HTML</p>", common.Footer)

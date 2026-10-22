@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
@@ -136,6 +137,32 @@ func GetOptions(c *gin.Context) {
 type OptionUpdateRequest struct {
 	Key   string `json:"key"`
 	Value any    `json:"value"`
+}
+
+// UpdateFooterOptions commits the two branding fields as a single operation.
+// Keep this endpoint scoped to footer settings rather than exposing arbitrary bulk writes.
+func UpdateFooterOptions(c *gin.Context) {
+	var request struct {
+		SystemName   *string `json:"SystemName"`
+		FooterConfig *string `json:"FooterConfig"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil || request.SystemName == nil || request.FooterConfig == nil {
+		common.ApiErrorT(c, "Invalid footer configuration")
+		return
+	}
+	name := strings.TrimSpace(*request.SystemName)
+	if name == "" || utf8.RuneCountInString(name) > 100 {
+		common.ApiErrorT(c, "Invalid footer configuration")
+		return
+	}
+	if err := model.UpdateOptionsBulk(map[string]string{
+		"SystemName": name, system_setting.FooterConfigKey: *request.FooterConfig,
+	}); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "option.update", map[string]any{"key": "SystemName, " + system_setting.FooterConfigKey})
+	common.ApiSuccess(c, nil)
 }
 
 func UpdatePasskeyDomains(c *gin.Context) {

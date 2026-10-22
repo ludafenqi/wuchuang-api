@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { BrandFooter } from '@/features/footer/brand-footer'
 import { parseFooterConfig } from '@/features/footer/config'
+import { useSiteFooterNotice } from '@/features/open-source/footer-notice'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { DEFAULT_SYSTEM_NAME } from '@/lib/constants'
@@ -27,13 +28,16 @@ import { DemoFooter } from './demo-footer'
 export function Footer(props: { className?: string }) {
   const system = useSystemConfig()
   const { status } = useStatus()
+  const config = parseFooterConfig(status?.footer_config)
+  const demo = system.demoSiteEnabled && !status?.footer_config
+  useSiteFooterNotice(!demo && config.enabled)
   // Preserve the upstream demonstration site's project navigation and attribution.
-  if (system.demoSiteEnabled && !status?.footer_config) {
+  if (demo) {
     return <DemoFooter {...props} />
   }
   return (
     <BrandFooter
-      config={parseFooterConfig(status?.footer_config)}
+      config={config}
       name={
         system.systemName && system.systemName !== DEFAULT_SYSTEM_NAME
           ? system.systemName

@@ -33,7 +33,7 @@ import { api } from '@/lib/api'
 import { Route as AboutRoute } from '@/routes/about'
 import { Route as NoticeRoute } from '@/routes/open-source'
 
-import { OpenSourceAccess } from '../access'
+import { FooterNoticeProvider, OpenSourceAccess } from '../access'
 
 vi.mock('@/components/layout', () => ({
   PublicLayout: (props: { children: ReactNode }) => (
@@ -45,15 +45,19 @@ describe('public about and open-source routes', () => {
   it.each(['/about', '/open-source'])(
     'keeps %s accessible independently of administrator content',
     async (path) => {
+      vi.stubEnv(
+        'VITE_SOURCE_REVISION',
+        '0123456789abcdef0123456789abcdef01234567'
+      )
       vi.spyOn(api, 'get').mockResolvedValue({
         data: { success: true, data: 'Original About content' },
       })
       const root = createRootRoute({
         component: () => (
-          <>
+          <FooterNoticeProvider>
             <Outlet />
             <OpenSourceAccess />
-          </>
+          </FooterNoticeProvider>
         ),
       })
       const routeTree = root.addChildren([
@@ -101,13 +105,35 @@ describe('public about and open-source routes', () => {
         )
         expect(
           screen.getByRole('link', { name: 'Corresponding source code' })
-        ).toHaveAttribute('href', 'https://github.com/ludafenqi/wuchuang-api')
+        ).toHaveAttribute(
+          'href',
+          'https://github.com/ludafenqi/wuchuang-api/tree/0123456789abcdef0123456789abcdef01234567'
+        )
+        expect(
+          screen.getByRole('link', { name: 'AGPLv3 · LICENSE' })
+        ).toHaveAttribute(
+          'href',
+          'https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/LICENSE'
+        )
+        expect(screen.getByRole('link', { name: 'NOTICE' })).toHaveAttribute(
+          'href',
+          'https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/NOTICE'
+        )
         expect(
           screen.getByRole('link', { name: 'THIRD-PARTY-LICENSES.md' })
         ).toBeVisible()
       }
-      expect(screen.getByRole('complementary', { name: 'Legal' })).toBeVisible()
+      if (path === '/about') {
+        expect(
+          screen.getByRole('complementary', { name: 'Legal' })
+        ).toBeVisible()
+      } else {
+        expect(
+          screen.queryByRole('complementary', { name: 'Legal' })
+        ).not.toBeInTheDocument()
+      }
       client.clear()
+      vi.unstubAllEnvs()
     }
   )
 })

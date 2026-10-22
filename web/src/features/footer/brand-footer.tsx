@@ -120,7 +120,7 @@ export function BrandFooter(props: BrandFooterProps) {
       )}
       data-layout={config.layout}
     >
-      <div className='mx-auto max-w-6xl space-y-6 px-6 pt-8 pb-16 @xl:px-10 @xl:pt-12'>
+      <div className='mx-auto max-w-6xl space-y-6 px-6 py-8 @xl:px-10 @xl:py-12'>
         {showBrand && (
           <>
             <div

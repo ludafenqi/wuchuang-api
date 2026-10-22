@@ -16,18 +16,38 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
+import { useContext, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+
+import { FooterNoticeContext } from './footer-notice'
+
+export function FooterNoticeProvider(props: { children: ReactNode }) {
+  const [present, setPresent] = useState(false)
+  return (
+    <FooterNoticeContext.Provider value={{ present, setPresent }}>
+      {props.children}
+    </FooterNoticeContext.Provider>
+  )
+}
 
 // Outside configurable Footer/About content: the required legal entry cannot
 // disappear when either setting is empty, replaced or disabled.
 export function OpenSourceAccess() {
   const { t } = useTranslation()
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const footer = useContext(FooterNoticeContext)
+  if (footer?.present || pathname.replace(/\/$/, '') === '/open-source') {
+    return null
+  }
   return (
-    <aside aria-label={t('Legal')} className='fixed bottom-2 left-2 z-30'>
+    <aside
+      aria-label={t('Legal')}
+      className='bg-background text-muted-foreground border-t px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-xs'
+    >
       <Link
         to='/open-source'
-        className='bg-background text-muted-foreground hover:text-foreground inline-flex min-h-8 items-center rounded-lg border px-3 py-1 text-xs shadow-sm focus-visible:outline-2'
+        className='hover:text-foreground inline-flex min-h-8 items-center px-3 underline underline-offset-4 focus-visible:outline-2'
       >
         {t('Open-source notice')}
       </Link>

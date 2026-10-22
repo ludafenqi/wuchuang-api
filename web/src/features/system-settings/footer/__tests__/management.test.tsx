@@ -65,6 +65,33 @@ function renderManagement(overrides: Partial<SiteSettings> = {}) {
 }
 
 describe('visual footer management', () => {
+  it('submits the name and footer as one operation and keeps both draft fields after failure', async () => {
+    const user = userEvent.setup()
+    const put = vi.spyOn(api, 'put').mockResolvedValue({
+      data: { success: false, message: 'Storage unavailable' },
+    })
+    renderManagement()
+    await user.clear(screen.getByLabelText('Brand name'))
+    await user.type(screen.getByLabelText('Brand name'), 'Updated brand')
+    await user.clear(screen.getByLabelText('Brand description'))
+    await user.type(
+      screen.getByLabelText('Brand description'),
+      'Updated description'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(put).toHaveBeenCalledExactlyOnceWith('/api/option/footer', {
+      SystemName: 'Updated brand',
+      FooterConfig: JSON.stringify({
+        ...defaultFooterConfig(),
+        description: 'Updated description',
+      }),
+    })
+    expect(screen.getByLabelText('Brand name')).toHaveValue('Updated brand')
+    expect(screen.getByLabelText('Brand description')).toHaveValue(
+      'Updated description'
+    )
+  })
   it('previews changes without saving and supports mobile and dark previews', async () => {
     const user = userEvent.setup()
     const put = vi.spyOn(api, 'put')
@@ -110,9 +137,12 @@ describe('visual footer management', () => {
     await user.click(screen.getAllByRole('button', { name: 'Delete' })[0])
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await waitFor(() => expect(put).toHaveBeenCalled())
-    const payload = put.mock.calls[0][1] as { key: string; value: string }
-    expect(payload.key).toBe('FooterConfig')
-    expect(JSON.parse(payload.value).links).toEqual([
+    const payload = put.mock.calls[0][1] as {
+      SystemName: string
+      FooterConfig: string
+    }
+    expect(payload.SystemName).toBe('晤创AI')
+    expect(JSON.parse(payload.FooterConfig).links).toEqual([
       expect.objectContaining({ label: 'Support center', url: '/about' }),
     ])
   })
@@ -133,11 +163,12 @@ describe('visual footer management', () => {
     expect(screen.getByRole('switch', { name: 'Show footer' })).toBeChecked()
     await user.click(screen.getByRole('button', { name: 'Save Changes' }))
     await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(put).toHaveBeenCalledTimes(1)
+    expect(put.mock.calls[0][0]).toBe('/api/option/footer')
     expect(
-      put.mock.calls.map((call) => (call[1] as { key: string }).key)
-    ).toEqual(['FooterConfig'])
-    expect(
-      JSON.parse((put.mock.calls[0][1] as { value: string }).value).legacyMode
+      JSON.parse(
+        (put.mock.calls[0][1] as { FooterConfig: string }).FooterConfig
+      ).legacyMode
     ).toBe('ignore')
   })
   it('rejects unsafe URLs and retains the draft when saving fails', async () => {

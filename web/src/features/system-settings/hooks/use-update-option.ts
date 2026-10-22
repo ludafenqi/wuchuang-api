@@ -23,8 +23,16 @@ import { toast } from 'sonner'
 import { handleServerError } from '@/lib/handle-server-error'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { updatePasskeyDomains, updateSystemOption } from '../api'
-import type { UpdateOptionRequest, UpdatePasskeyDomainsRequest } from '../types'
+import {
+  updateFooterOptions,
+  updatePasskeyDomains,
+  updateSystemOption,
+} from '../api'
+import type {
+  UpdateFooterOptionsRequest,
+  UpdateOptionRequest,
+  UpdatePasskeyDomainsRequest,
+} from '../types'
 
 // Configuration keys that require status refresh
 const STATUS_RELATED_KEYS = new Set([
@@ -63,18 +71,26 @@ export function useUpdateOption() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (request: UpdateOptionRequest) =>
-      requireServerSuccess(await updateSystemOption(request)),
+    mutationFn: async (
+      request: UpdateOptionRequest | UpdateFooterOptionsRequest
+    ) =>
+      requireServerSuccess(
+        await ('key' in request
+          ? updateSystemOption(request)
+          : updateFooterOptions(request))
+      ),
     onSuccess: async (data, variables) => {
       if (data.success) {
+        const keys =
+          'key' in variables ? [variables.key] : ['SystemName', 'FooterConfig']
         // Always refresh system-options
         queryClient.invalidateQueries({ queryKey: ['system-options'] })
-        if (variables.key === 'About') {
+        if (keys.includes('About')) {
           queryClient.invalidateQueries({ queryKey: ['about-content'] })
         }
 
         // If updating frontend-display-related config, also refresh status
-        if (STATUS_RELATED_KEYS.has(variables.key)) {
+        if (keys.some((key) => STATUS_RELATED_KEYS.has(key))) {
           try {
             window.localStorage.removeItem('status')
           } catch {

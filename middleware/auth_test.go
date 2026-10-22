@@ -91,7 +91,7 @@ func createMiddlewarePATUser(t *testing.T, username, token string) *model.User {
 	return user
 }
 
-func TestFooterOptionsRequireRootSession(t *testing.T) {
+func TestFooterOptionsRequireRootAuthorization(t *testing.T) {
 	setupDashboardAuthMiddlewareTest(t)
 	gin.SetMode(gin.TestMode)
 	for _, test := range []struct {
@@ -107,8 +107,8 @@ func TestFooterOptionsRequireRootSession(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
 			called := false
-			router.PUT("/api/option/", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
-			request := httptest.NewRequest(http.MethodPut, "/api/option/", strings.NewReader(`{"key":"FooterConfig","value":"{}"}`))
+			router.PUT("/api/option/footer", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
+			request := httptest.NewRequest(http.MethodPut, "/api/option/footer", strings.NewReader(`{"SystemName":"Brand","FooterConfig":"{}"}`))
 			if test.role != 0 {
 				user := createMiddlewarePATUser(t, "footer-"+test.name, "unused-footer-"+test.name)
 				require.NoError(t, model.DB.Model(user).Update("role", test.role).Error)
@@ -123,6 +123,35 @@ func TestFooterOptionsRequireRootSession(t *testing.T) {
 			router.ServeHTTP(response, request)
 			assert.Equal(t, test.status, response.Code)
 			assert.Equal(t, test.role == common.RoleRootUser, called)
+		})
+	}
+	for _, test := range []struct {
+		name, scope, code string
+		role, status      int
+		expiresAt         int64
+	}{
+		{name: "root write token", role: common.RoleRootUser, scope: "option:write", status: http.StatusNoContent},
+		{name: "root read token", role: common.RoleRootUser, scope: "option:read", status: http.StatusForbidden, code: "ACCESS_TOKEN_SCOPE_DENIED"},
+		{name: "root unrelated token", role: common.RoleRootUser, scope: "profile:write", status: http.StatusForbidden, code: "ACCESS_TOKEN_SCOPE_DENIED"},
+		{name: "admin write token", role: common.RoleAdminUser, scope: "option:write", status: http.StatusForbidden, code: "AUTH_INSUFFICIENT_PRIVILEGE"},
+		{name: "expired root write token", role: common.RoleRootUser, scope: "option:write", expiresAt: time.Now().Unix() - 1, status: http.StatusUnauthorized, code: "ACCESS_TOKEN_EXPIRED"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			user := createMiddlewarePATUser(t, "footer-token-"+strings.ReplaceAll(test.name, " ", "-"), "unused-"+test.name)
+			require.NoError(t, model.DB.Model(user).Update("role", test.role).Error)
+			token, _ := createMiddlewareScopedToken(t, user.Id, test.expiresAt, test.scope)
+			router := gin.New()
+			called := false
+			router.PUT("/api/option/footer", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
+			request := httptest.NewRequest(http.MethodPut, "/api/option/footer", nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			assert.Equal(t, test.status, response.Code, response.Body.String())
+			assert.Equal(t, test.status == http.StatusNoContent, called)
+			if test.code != "" {
+				assert.Contains(t, response.Body.String(), `"code":"`+test.code+`"`)
+			}
 		})
 	}
 }
