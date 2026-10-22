@@ -84,12 +84,9 @@ export function FooterManagement(props: { settings: SiteSettings }) {
   const values = useWatch({ control: form.control }) as FooterFormValues
   const save = form.handleSubmit(async (data) => {
     try {
-      if (data.SystemName !== props.settings.SystemName) {
-        await update.mutateAsync({ key: 'SystemName', value: data.SystemName })
-      }
       await update.mutateAsync({
-        key: 'FooterConfig',
-        value: JSON.stringify(data.config),
+        SystemName: data.SystemName,
+        FooterConfig: JSON.stringify(data.config),
       })
       form.reset(data)
     } catch {

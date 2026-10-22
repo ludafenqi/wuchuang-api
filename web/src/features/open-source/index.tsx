@@ -21,10 +21,14 @@ import { useTranslation } from 'react-i18next'
 import { PublicLayout } from '@/components/layout'
 import { OpenSourceAttribution } from '@/features/footer/brand-footer'
 
-const repository = 'https://github.com/ludafenqi/wuchuang-api'
+import { releaseSourceLinks } from './source'
 
 export function OpenSourceNotice() {
   const { t } = useTranslation()
+  const source = releaseSourceLinks(
+    import.meta.env.VITE_SOURCE_REVISION,
+    import.meta.env.VITE_REACT_APP_VERSION
+  )
   return (
     <PublicLayout>
       <article className='mx-auto max-w-4xl space-y-8 py-10 pb-16 text-sm leading-7 break-words'>
@@ -39,6 +43,17 @@ export function OpenSourceNotice() {
           <a className='text-primary underline' href='https://wcai.113901.xyz'>
             https://wcai.113901.xyz
           </a>
+          {source.ref ? (
+            <p className='text-muted-foreground'>
+              {t('Source revision')}: <code>{source.ref}</code>
+            </p>
+          ) : (
+            <p className='text-muted-foreground'>
+              {t(
+                'The build source revision is unavailable. Repository links may not match this release.'
+              )}
+            </p>
+          )}
         </header>
         <section className='space-y-3'>
           <h2 className='text-xl font-semibold'>
@@ -87,7 +102,7 @@ export function OpenSourceNotice() {
           <div className='flex flex-wrap gap-5'>
             <a
               className='text-primary underline'
-              href={repository}
+              href={source.source}
               target='_blank'
               rel='noopener noreferrer'
             >
@@ -95,7 +110,7 @@ export function OpenSourceNotice() {
             </a>
             <a
               className='text-primary underline'
-              href={`${repository}/blob/main/LICENSE`}
+              href={source.license}
               target='_blank'
               rel='noopener noreferrer'
             >
@@ -103,7 +118,7 @@ export function OpenSourceNotice() {
             </a>
             <a
               className='text-primary underline'
-              href={`${repository}/blob/main/NOTICE`}
+              href={source.notice}
               target='_blank'
               rel='noopener noreferrer'
             >
@@ -125,7 +140,7 @@ export function OpenSourceNotice() {
           </p>
           <a
             className='text-primary underline'
-            href={`${repository}/commits/main`}
+            href={source.history}
             target='_blank'
             rel='noopener noreferrer'
           >
@@ -141,7 +156,7 @@ export function OpenSourceNotice() {
           </p>
           <a
             className='text-primary underline'
-            href={`${repository}/blob/main/THIRD-PARTY-LICENSES.md`}
+            href={source.thirdParty}
             target='_blank'
             rel='noopener noreferrer'
           >

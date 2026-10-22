@@ -30,49 +30,63 @@ import { useUpdateOption } from '../../hooks/use-update-option'
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 describe('branding option cache refresh', () => {
-  it.each(['SystemName', 'Logo', 'Footer', 'FooterConfig', 'About'])(
-    'refreshes inactive status after saving %s',
-    async (key) => {
-      const client = new QueryClient({
-        defaultOptions: {
-          queries: { retry: false },
-          mutations: { retry: false },
-        },
-      })
-      vi.spyOn(api, 'get').mockResolvedValue({
-        data: {
-          success: true,
-          data: { system_name: 'Before', logo: '/old.png', footer_html: 'old' },
-        },
-      })
-      await client.fetchQuery(statusQueryOptions)
-      vi.mocked(api.get).mockResolvedValue({
-        data: {
-          success: true,
-          data: { system_name: 'After', logo: '/new.png', footer_html: 'new' },
-        },
-      })
-      vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true } })
-      client.setQueryData(['about-content'], { success: true, data: 'old' })
-      const wrapper = (props: { children: ReactNode }) => (
-        <QueryClientProvider client={client}>
-          {props.children}
-        </QueryClientProvider>
+  it.each([
+    'SystemName',
+    'Logo',
+    'Footer',
+    'FooterConfig',
+    'About',
+    'footer batch',
+  ])('refreshes inactive status after saving %s', async (key) => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    })
+    vi.spyOn(api, 'get').mockResolvedValue({
+      data: {
+        success: true,
+        data: { system_name: 'Before', logo: '/old.png', footer_html: 'old' },
+      },
+    })
+    await client.fetchQuery(statusQueryOptions)
+    vi.mocked(api.get).mockResolvedValue({
+      data: {
+        success: true,
+        data: { system_name: 'After', logo: '/new.png', footer_html: 'new' },
+      },
+    })
+    vi.spyOn(api, 'put').mockResolvedValue({ data: { success: true } })
+    client.setQueryData(['about-content'], { success: true, data: 'old' })
+    const wrapper = (props: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>
+        {props.children}
+      </QueryClientProvider>
+    )
+    const hook = renderHook(() => useUpdateOption(), { wrapper })
+    await act(() =>
+      hook.result.current.mutateAsync(
+        key === 'footer batch'
+          ? { SystemName: 'After', FooterConfig: 'value' }
+          : { key, value: 'value' }
       )
-      const hook = renderHook(() => useUpdateOption(), { wrapper })
-      await act(() => hook.result.current.mutateAsync({ key, value: 'value' }))
-      await waitFor(() =>
-        expect(useSystemConfigStore.getState().config.systemName).toBe('After')
-      )
-      expect(useSystemConfigStore.getState().config.logo).toBe('/new.png')
-      expect(useSystemConfigStore.getState().config.footerHtml).toBe('new')
-      if (key === 'About') {
-        expect(client.getQueryState(['about-content'])?.isInvalidated).toBe(
-          true
-        )
-      }
-      hook.unmount()
-      client.clear()
+    )
+    await waitFor(() =>
+      expect(useSystemConfigStore.getState().config.systemName).toBe('After')
+    )
+    expect(useSystemConfigStore.getState().config.logo).toBe('/new.png')
+    expect(useSystemConfigStore.getState().config.footerHtml).toBe('new')
+    if (key === 'footer batch') {
+      expect(api.put).toHaveBeenCalledWith('/api/option/footer', {
+        SystemName: 'After',
+        FooterConfig: 'value',
+      })
     }
-  )
+    if (key === 'About') {
+      expect(client.getQueryState(['about-content'])?.isInvalidated).toBe(true)
+    }
+    hook.unmount()
+    client.clear()
+  })
 })

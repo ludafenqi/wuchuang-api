@@ -107,8 +107,8 @@ func TestFooterOptionsRequireRootSession(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			router := gin.New()
 			called := false
-			router.PUT("/api/option/", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
-			request := httptest.NewRequest(http.MethodPut, "/api/option/", strings.NewReader(`{"key":"FooterConfig","value":"{}"}`))
+			router.PUT("/api/option/footer", RootAuth(), func(c *gin.Context) { called = true; c.Status(http.StatusNoContent) })
+			request := httptest.NewRequest(http.MethodPut, "/api/option/footer", strings.NewReader(`{"SystemName":"Brand","FooterConfig":"{}"}`))
 			if test.role != 0 {
 				user := createMiddlewarePATUser(t, "footer-"+test.name, "unused-footer-"+test.name)
 				require.NoError(t, model.DB.Model(user).Update("role", test.role).Error)

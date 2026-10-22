@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -16,6 +17,21 @@ export default defineConfig(({ envMode }) => {
     'http://localhost:3000'
 
   const isProd = envMode === 'production'
+  let sourceRevision =
+    process.env.VITE_SOURCE_REVISION ||
+    env.rawPublicVars.VITE_SOURCE_REVISION ||
+    ''
+  if (!sourceRevision) {
+    try {
+      sourceRevision = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: __dirname,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim()
+    } catch {
+      // Source archives and Docker contexts may not include Git metadata.
+    }
+  }
   const devProxy = Object.fromEntries(
     (['/api', '/v1', '/mj', '/pg'] as const).map((key) => [
       key,
@@ -53,6 +69,14 @@ export default defineConfig(({ envMode }) => {
       },
     },
     source: {
+      define: {
+        'import.meta.env.VITE_SOURCE_REVISION': JSON.stringify(sourceRevision),
+        'import.meta.env.VITE_REACT_APP_VERSION': JSON.stringify(
+          process.env.VITE_REACT_APP_VERSION ||
+            env.rawPublicVars.VITE_REACT_APP_VERSION ||
+            ''
+        ),
+      },
       entry: {
         index: './src/main.tsx',
       },
