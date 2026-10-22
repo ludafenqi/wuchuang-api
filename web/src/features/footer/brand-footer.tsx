@@ -31,20 +31,22 @@ import {
   type FooterLink,
 } from './config'
 
-export function OpenSourceAttribution() {
+export function OpenSourceAttribution(props: { showUpstreamLink?: boolean }) {
   const { t } = useTranslation()
   return (
     <div className='text-muted-foreground flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs leading-relaxed'>
       <p>Frontend design and development by New API contributors.</p>
       <div className='flex flex-wrap gap-4'>
-        <a
-          href='https://github.com/QuantumNous/new-api'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='hover:text-foreground underline underline-offset-4'
-        >
-          New API
-        </a>
+        {props.showUpstreamLink !== false && (
+          <a
+            href='https://github.com/QuantumNous/new-api'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='hover:text-foreground underline underline-offset-4'
+          >
+            New API
+          </a>
+        )}
         <Link
           to='/open-source'
           className='hover:text-foreground underline underline-offset-4'
@@ -199,7 +201,7 @@ export function BrandFooter(props: BrandFooterProps) {
             className='custom-footer min-w-0 overflow-hidden [contain:paint]'
           />
         )}
-        <OpenSourceAttribution />
+        <OpenSourceAttribution showUpstreamLink={false} />
       </div>
     </footer>
   )
