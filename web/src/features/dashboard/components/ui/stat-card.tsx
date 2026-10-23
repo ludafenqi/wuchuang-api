@@ -300,7 +300,7 @@ export function StatCard(props: StatCardProps) {
   return (
     <div
       className={cn(
-        'group flex flex-col justify-between sm:min-h-32 sm:gap-3',
+        'wcai-stat-card group flex flex-col justify-between sm:min-h-32 sm:gap-3',
         props.compactMobile ? 'gap-1' : 'gap-1.5'
       )}
     >

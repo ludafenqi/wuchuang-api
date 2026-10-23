@@ -80,7 +80,7 @@ export function Hero(props: HeroProps) {
   }
 
   return (
-    <section className='relative z-10 overflow-hidden px-6 pt-24 pb-16 md:pt-32 md:pb-24 lg:pt-36 lg:pb-28'>
+    <section className='wcai-hero relative z-10 overflow-hidden px-6 pt-28 pb-16 md:pt-36 md:pb-24 lg:pt-40 lg:pb-28'>
       {/* Radial gradient background */}
       <div
         aria-hidden
@@ -115,12 +115,12 @@ export function Hero(props: HeroProps) {
           </div>
 
           <h1
-            className='landing-animate-fade-up text-[clamp(2.25rem,4.5vw,3.25rem)] leading-[1.15] font-bold tracking-tight'
+            className='landing-animate-fade-up text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.18] font-bold tracking-tight text-balance'
             style={{ animationDelay: '60ms' }}
           >
             {t('Unified API Gateway for')}
             <br />
-            <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
+            <span className='wcai-brand-text bg-clip-text text-transparent'>
               {t('Vast Range of AI Models')}
             </span>
           </h1>
