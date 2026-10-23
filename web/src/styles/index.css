@@ -86,10 +86,14 @@ For commercial licensing, please contact support@quantumnous.com
   border-block: 1px solid var(--border);
 }
 
-.wcai-public [data-slot='card'],
-.wcai-console [data-slot='card'] {
-  border-color: var(--border);
-  box-shadow: var(--wcai-surface-shadow);
+/* Card's ring utilities compose --tw-shadow into their shadow stack. Keep the
+ * decorative shadow below utilities so warning rings, semantic borders and
+ * explicit shadow overrides retain their existing visual meaning. */
+@layer components {
+  .wcai-public [data-slot='card'],
+  .wcai-console [data-slot='card'] {
+    --tw-shadow: var(--wcai-surface-shadow);
+  }
 }
 
 .wcai-pricing [data-slot='card'] {
@@ -162,10 +166,6 @@ For commercial licensing, please contact support@quantumnous.com
 
 .wcai-auth-panel h2 {
   letter-spacing: -0.025em;
-}
-
-:where([data-slot='dialog-content'], [data-slot='sheet-content']) {
-  border-color: var(--border);
 }
 
 @media (prefers-reduced-motion: no-preference) and (hover: hover) {
