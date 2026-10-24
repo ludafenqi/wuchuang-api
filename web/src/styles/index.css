@@ -71,12 +71,6 @@ For commercial licensing, please contact support@quantumnous.com
   line-height: 1.8;
 }
 
-.wcai-hero [data-slot='button'].bg-primary,
-.wcai-cta [data-slot='button'].bg-primary {
-  box-shadow: 0 6px 18px -6px
-    color-mix(in oklch, var(--primary) 55%, transparent);
-}
-
 .wcai-cta {
   background: linear-gradient(
     120deg,
@@ -94,6 +88,18 @@ For commercial licensing, please contact support@quantumnous.com
   .wcai-console [data-slot='card'] {
     --tw-shadow: var(--wcai-surface-shadow);
   }
+
+  .wcai-hero [data-slot='button'].bg-primary,
+  .wcai-cta [data-slot='button'].bg-primary {
+    @apply shadow-sm;
+    --tw-shadow: 0 4px 12px -4px
+      color-mix(in oklch, var(--primary) 35%, transparent);
+  }
+
+  .wcai-pricing input[type='text'] {
+    @apply bg-card shadow-xs;
+    --tw-shadow: var(--wcai-surface-shadow);
+  }
 }
 
 .wcai-pricing [data-slot='card'] {
@@ -104,11 +110,6 @@ For commercial licensing, please contact support@quantumnous.com
 .wcai-pricing [data-slot='card-footer'] {
   border-color: var(--border);
   background-color: color-mix(in oklch, var(--muted) 45%, var(--card));
-}
-
-.wcai-pricing input[type='text'] {
-  background-color: var(--card);
-  box-shadow: var(--wcai-surface-shadow);
 }
 
 .wcai-pricing header h1 {
@@ -126,11 +127,18 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .wcai-console [data-slot='sidebar-menu-button'][data-active] {
-  box-shadow: inset 3px 0 0 var(--sidebar-primary);
+  /* A background marker leaves the component's focus ring intact. */
+  background-image: linear-gradient(
+    var(--sidebar-primary),
+    var(--sidebar-primary)
+  );
+  background-position: left center;
+  background-repeat: no-repeat;
+  background-size: 3px 55%;
 }
 
 .wcai-console [data-slot='table-header'] {
-  background-color: var(--table-header);
+  background-color: color-mix(in oklch, var(--primary) 4%, var(--card));
 }
 
 .wcai-console [data-slot='table-container'] {
@@ -203,6 +211,435 @@ For commercial licensing, please contact support@quantumnous.com
 
   .wcai-stat-card {
     padding-top: 0.5rem;
+  }
+}
+
+/* Plan E uses the existing semantic tokens, controls and theme preferences.
+ * Decorative brand surfaces do not replace status colours or focus rings. */
+.wcai-public,
+.wcai-console,
+.wcai-auth {
+  --wcai-brand-deep: color-mix(in oklch, var(--primary) 24%, #10182d);
+  --wcai-surface-shadow:
+    0 2px 4px color-mix(in oklch, var(--foreground) 2%, transparent),
+    0 18px 40px -26px color-mix(in oklch, var(--primary) 30%, transparent);
+}
+
+.wcai-public-header nav {
+  backdrop-filter: blur(20px);
+}
+.wcai-hero {
+  background:
+    radial-gradient(
+      ellipse at 92% 35%,
+      color-mix(in oklch, var(--chart-2) 17%, transparent),
+      transparent 55%
+    ),
+    radial-gradient(
+      ellipse at 5% 5%,
+      color-mix(in oklch, var(--primary) 10%, transparent),
+      transparent 45%
+    ),
+    linear-gradient(180deg, var(--card), var(--background));
+}
+.wcai-hero h1 {
+  letter-spacing: -0.045em;
+}
+.wcai-supported-apps a,
+.wcai-supported-apps .cursor-default {
+  border-radius: var(--radius-lg);
+  padding-inline: 1rem;
+  background-color: var(--card);
+}
+.wcai-hero-demo {
+  position: relative;
+}
+.wcai-hero-demo::before {
+  content: '';
+  position: absolute;
+  inset: -1.25rem;
+  border: 1px solid color-mix(in oklch, var(--primary) 14%, var(--border));
+  border-radius: calc(var(--radius) * 2.6);
+  transform: rotate(3deg);
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--primary) 12%, var(--card)),
+    color-mix(in oklch, var(--chart-2) 20%, var(--card))
+  );
+}
+.wcai-terminal {
+  position: relative;
+  padding: 0.6rem;
+  border-radius: calc(var(--radius) * 2);
+  background: var(--wcai-brand-deep);
+  box-shadow: 0 28px 60px -28px
+    color-mix(in oklch, var(--primary) 50%, transparent);
+}
+.wcai-terminal > div {
+  border-radius: var(--radius-lg);
+}
+.wcai-home-stats {
+  background: var(--background);
+}
+.wcai-features > div > div:first-child p,
+.wcai-steps > div > div:first-child p {
+  color: var(--primary);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.wcai-feature-card {
+  min-height: 16rem;
+}
+.wcai-feature-card:first-child {
+  background: linear-gradient(
+    135deg,
+    var(--card) 20%,
+    color-mix(in oklch, var(--primary) 9%, var(--card))
+  );
+}
+.wcai-feature-card::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--primary), var(--chart-2));
+  opacity: 0.65;
+}
+.wcai-feature-extra {
+  border-top-color: color-mix(in oklch, var(--primary) 35%, var(--border));
+}
+.wcai-step-card::after {
+  content: '';
+  position: absolute;
+  right: -1rem;
+  bottom: -1rem;
+  width: 8rem;
+  height: 8rem;
+  border-radius: 50%;
+  border: 1.5rem solid color-mix(in oklch, var(--primary) 4%, transparent);
+  pointer-events: none;
+}
+.wcai-cta {
+  border: 0;
+  background: var(--background);
+}
+.wcai-cta-panel {
+  border-color: color-mix(in oklch, var(--primary) 25%, var(--border));
+  background:
+    radial-gradient(
+      ellipse at 90% 0%,
+      color-mix(in oklch, var(--chart-2) 18%, transparent),
+      transparent 60%
+    ),
+    linear-gradient(
+      120deg,
+      color-mix(in oklch, var(--primary) 9%, var(--card)),
+      var(--card)
+    );
+  box-shadow: var(--wcai-surface-shadow);
+}
+
+/* Navigation keeps its original hierarchy and collapse behaviour. */
+.wcai-console [data-slot='sidebar'],
+[data-slot='sidebar'][data-mobile='true'] {
+  --sidebar: color-mix(in oklch, var(--primary) 22%, #10182d);
+  --sidebar-foreground: #d8e1f5;
+  --sidebar-accent: color-mix(in oklch, var(--primary) 65%, #283253);
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #33405c;
+  --sidebar-ring: #bac5ff;
+  --foreground: #edf2ff;
+  --muted: #2b3652;
+  --muted-foreground: #b6c2da;
+  color: var(--sidebar-foreground);
+}
+.wcai-console [data-slot='sidebar-inner'],
+[data-slot='sidebar'][data-mobile='true'] {
+  background: var(--sidebar);
+}
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu-button'] {
+  border-radius: var(--radius-md);
+  gap: 0.75rem;
+}
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu-button'][data-size='default'] {
+  height: calc(var(--spacing) * 10);
+}
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu-button'][data-active] {
+  background-image: linear-gradient(
+    110deg,
+    color-mix(in oklch, var(--primary) 72%, #29355b),
+    color-mix(in oklch, var(--chart-2) 55%, #29355b)
+  );
+  background-size: 100% 100%;
+  color: #ffffff;
+  font-weight: 600;
+}
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-group'] {
+  padding-block: 0.5rem;
+}
+.wcai-app-header {
+  background: var(--card);
+}
+.wcai-app-header > div {
+  padding-inline: 1rem;
+  gap: 0.75rem;
+}
+.wcai-console [data-slot='sidebar-inset'] {
+  border-radius: calc(var(--radius) * 1.5);
+  box-shadow: none;
+}
+.wcai-page-heading h2 {
+  position: relative;
+  padding-left: 0.85rem;
+}
+.wcai-page-heading h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  height: 70%;
+  width: 4px;
+  border-radius: 1rem;
+  background: linear-gradient(var(--primary), var(--chart-2));
+}
+.wcai-setup-card {
+  border-top: 4px solid var(--primary);
+}
+.wcai-setup-card h3 {
+  text-wrap: balance;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.wcai-setup-step > a {
+  background: var(--card);
+  padding: 1rem;
+  box-shadow: none;
+}
+.wcai-setup-step > a:hover {
+  background: var(--accent);
+}
+.wcai-quick-actions {
+  background: linear-gradient(
+    160deg,
+    var(--card) 70%,
+    color-mix(in oklch, var(--primary) 5%, var(--card))
+  );
+}
+.wcai-quick-actions [data-slot='button'] {
+  border-color: transparent;
+  background: var(--background);
+  padding-block: 1rem;
+}
+.wcai-quick-actions [data-slot='button']:hover {
+  border-color: var(--primary);
+  background: var(--accent);
+}
+.wcai-stat-card {
+  border: 0;
+  padding: 0;
+}
+.wcai-metric {
+  position: relative;
+  overflow: hidden;
+}
+.wcai-metric::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  background: var(--overview-accent-1);
+}
+.wcai-metric:nth-child(2)::before {
+  background: var(--overview-accent-2);
+}
+.wcai-metric:nth-child(3)::before {
+  background: var(--overview-accent-3);
+}
+.wcai-credit {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklch, var(--primary) 9%, var(--card)),
+    color-mix(in oklch, var(--chart-2) 7%, var(--card))
+  );
+}
+
+.wcai-chart-panel > div:first-child {
+  background-color: color-mix(in oklch, var(--primary) 3%, var(--card));
+  padding-block: 1rem;
+}
+
+.wcai-auth {
+  background: var(--background);
+}
+.wcai-auth-art {
+  background:
+    radial-gradient(
+      ellipse at 85% 20%,
+      color-mix(in oklch, var(--chart-2) 55%, transparent),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at 10% 100%,
+      color-mix(in oklch, var(--primary) 60%, transparent),
+      transparent 70%
+    ),
+    var(--wcai-brand-deep);
+}
+.wcai-auth-grid {
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 3rem 3rem;
+  mask-image: radial-gradient(ellipse, black, transparent 85%);
+}
+.wcai-auth-orbit {
+  width: min(32vw, 28rem);
+  height: min(32vw, 28rem);
+}
+.wcai-auth-orbit-ring {
+  position: absolute;
+  inset: 0;
+  border: 1px solid #ffffff30;
+  border-radius: 50%;
+}
+.wcai-auth-orbit-ring:nth-child(2) {
+  inset: 15%;
+  border-style: dashed;
+  transform: rotate(25deg);
+}
+.wcai-auth-orbit-ring:nth-child(3) {
+  inset: 30%;
+  border-color: #ffffff60;
+}
+.wcai-auth-core {
+  position: absolute;
+  inset: 39%;
+  border-radius: 25%;
+  transform: rotate(-15deg);
+  background: linear-gradient(
+    135deg,
+    #d4ddff,
+    color-mix(in oklch, var(--chart-2) 65%, white)
+  );
+  box-shadow: 0 0 100px 15px
+    color-mix(in oklch, var(--primary) 55%, transparent);
+}
+.wcai-auth-node {
+  position: absolute;
+  top: 2%;
+  left: 25%;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid #ffffff55;
+  border-radius: var(--radius-lg);
+  background: #ffffff20;
+  backdrop-filter: blur(12px);
+}
+.wcai-auth-node:nth-last-child(2) {
+  top: 72%;
+  left: 80%;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.wcai-auth-node:last-child {
+  top: 60%;
+  left: 0%;
+  width: 2rem;
+  height: 2rem;
+}
+.wcai-auth-wordmark {
+  color: #ffffffd9;
+}
+.wcai-auth-panel {
+  border-radius: calc(var(--radius) * 1.8);
+  box-shadow: 0 22px 64px -32px
+    color-mix(in oklch, var(--primary) 30%, transparent);
+}
+.wcai-auth-panel h2 {
+  font-size: 1.875rem;
+  line-height: 1.3;
+  margin-bottom: 0.5rem;
+}
+.wcai-auth-panel form {
+  padding-top: 1.25rem;
+}
+.wcai-auth-panel :is([data-slot='input'], input[data-slot='form-control']) {
+  height: 3rem;
+  border-radius: var(--radius-lg);
+}
+/* Use the controls' own focus, invalid, disabled and loading implementations. */
+@layer components {
+  .wcai-auth-panel [data-slot='button'][type='submit'] {
+    min-height: 3rem;
+    border-radius: var(--radius-lg);
+    font-weight: 600;
+  }
+  .wcai-console [data-slot='input'],
+  .wcai-console input[data-slot='form-control'],
+  .wcai-console [data-slot='select-trigger'] {
+    min-height: calc(var(--spacing) * 9);
+  }
+  .wcai-console [data-slot='table-header'] {
+    background: color-mix(in oklch, var(--primary) 4%, var(--card));
+  }
+}
+@media (min-width: 1024px) {
+  .wcai-auth-brand {
+    color: #f4f6ff;
+  }
+}
+@media (max-width: 639px) {
+  .wcai-hero h1 {
+    font-size: clamp(2rem, 8.5vw, 2.5rem);
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+  .wcai-hero-demo::before {
+    inset: -0.5rem;
+    transform: rotate(2deg);
+  }
+  .wcai-terminal {
+    padding: 0.35rem;
+  }
+  .wcai-auth {
+    background:
+      radial-gradient(
+        ellipse at 50% 0%,
+        color-mix(in oklch, var(--primary) 18%, transparent),
+        transparent 55%
+      ),
+      var(--background);
+  }
+  .wcai-auth-content {
+    align-items: flex-start;
+  }
+  .wcai-app-header > div {
+    padding-inline: 0.5rem;
+    gap: 0.25rem;
+  }
+  .wcai-metric .wcai-stat-card {
+    min-height: 9.5rem;
+  }
+}
+
+@media (max-width: 389px) {
+  .wcai-app-header > div {
+    padding-inline: 0.25rem;
+    gap: 0;
+  }
+  .wcai-header-brand,
+  .wcai-header-actions {
+    gap: 0;
+  }
+  .wcai-header-brand > a {
+    padding-inline: 0;
+    gap: 0.25rem;
   }
 }
 

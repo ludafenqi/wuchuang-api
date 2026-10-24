@@ -47,7 +47,7 @@ import {
   footerConfigSchema,
   parseFooterConfig,
 } from '@/features/footer/config'
-import { DEFAULT_SYSTEM_NAME } from '@/lib/constants'
+import { DEFAULT_SYSTEM_NAME, SITE_BRAND } from '@/lib/constants'
 
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import {
@@ -76,7 +76,7 @@ export function FooterManagement(props: { settings: SiteSettings }) {
     defaultValues: {
       SystemName:
         props.settings.SystemName === DEFAULT_SYSTEM_NAME
-          ? '晤创AI'
+          ? SITE_BRAND.name
           : props.settings.SystemName,
       config: parseFooterConfig(props.settings.FooterConfig),
     },

@@ -7395,6 +7395,8 @@
     "Uses the existing site name and logo. Updating the brand name also updates the site name.": "Используются название и логотип сайта. Изменение бренда также меняет название сайта.",
     "Wuchuang AI customizes site branding, footer layouts, visual footer management and this notice. These changes do not imply endorsement by New API or QuantumNous. Modification history and build sources are available in the project repository.": "Wuchuang AI изменяет оформление бренда, макеты и визуальное управление подвалом, а также это уведомление. Это не означает одобрения New API или QuantumNous. История изменений и исходники сборки доступны в репозитории.",
     "Wuchuang AI modifications": "Изменения Wuchuang AI",
-    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "Wuchuang AI предоставляет агрегацию ИИ-моделей и API-сервисы. Это модифицированная версия New API, независимо управляемая Wuchuang AI."
+    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "Wuchuang AI предоставляет агрегацию ИИ-моделей и API-сервисы. Это модифицированная версия New API, независимо управляемая Wuchuang AI.",
+    "Hide password": "Скрыть пароль",
+    "Show password": "Показать пароль"
   }
 }

@@ -7395,6 +7395,8 @@
     "Uses the existing site name and logo. Updating the brand name also updates the site name.": "Dùng tên và logo hiện có. Đổi tên thương hiệu cũng cập nhật tên trang.",
     "Wuchuang AI customizes site branding, footer layouts, visual footer management and this notice. These changes do not imply endorsement by New API or QuantumNous. Modification history and build sources are available in the project repository.": "Wuchuang AI tùy chỉnh thương hiệu, bố cục và quản lý chân trang trực quan cùng thông báo này. Các thay đổi không hàm ý New API hay QuantumNous bảo trợ. Lịch sử và mã nguồn xây dựng có trong kho dự án.",
     "Wuchuang AI modifications": "Các sửa đổi của Wuchuang AI",
-    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "Wuchuang AI cung cấp dịch vụ tổng hợp mô hình AI và API. Dịch vụ này là bản tùy chỉnh của New API, do Wuchuang AI vận hành độc lập."
+    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "Wuchuang AI cung cấp dịch vụ tổng hợp mô hình AI và API. Dịch vụ này là bản tùy chỉnh của New API, do Wuchuang AI vận hành độc lập.",
+    "Hide password": "Ẩn mật khẩu",
+    "Show password": "Hiện mật khẩu"
   }
 }

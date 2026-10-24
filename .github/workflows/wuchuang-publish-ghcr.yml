@@ -2,10 +2,20 @@ name: Wuchuang - Publish GHCR manually
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_test:
+        description: 'TEST BRANCH ONLY: publish the verified image to GHCR'
+        type: boolean
+        required: false
+        default: false
+      confirm_sha:
+        description: 'For test publication, enter the full selected commit SHA'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: wuchuang-manual-publish
@@ -13,6 +23,11 @@ concurrency:
 
 jobs:
   verify-build-publish:
+    # Keep the existing main release path separate from test candidates.
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -121,3 +136,337 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "Commit: ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
           echo 'Publishing to GHCR does NOT update the VPS automatically.' >> "$GITHUB_STEP_SUMMARY"
+
+  test-build:
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-ghcr-test'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.candidate.outputs.tag }}
+    env:
+      GOWORK: 'off'
+      IMAGE: ghcr.io/ludafenqi/wuchuang-api
+      VITE_SOURCE_REVISION: ${{ github.sha }}
+
+    steps:
+      - name: Checkout exact selected test commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Validate test source and publication request
+        id: candidate
+        env:
+          PUBLISH_TEST: ${{ inputs.publish_test }}
+          CONFIRM_SHA: ${{ inputs.confirm_sha }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_EVENT_NAME" = workflow_dispatch
+          test "$GITHUB_REF" = refs/heads/codex/wucora-ghcr-test
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [ "$PUBLISH_TEST" = true ] && [ "$CONFIRM_SHA" != "$GITHUB_SHA" ]; then
+            echo '::error::Test publication requires the full selected commit SHA.'
+            exit 1
+          fi
+          tag="test-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY'
+          import pathlib, re, subprocess
+          paths = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0")
+          for item in filter(None, paths):
+              p = pathlib.PurePosixPath(item)
+              blocked = (
+                  ".local-tests" in p.parts
+                  or (p.name.startswith(".env") and p.name != ".env.example")
+                  or p.suffix.lower() in {".db", ".sqlite", ".sqlite3", ".log", ".pem", ".key", ".p12", ".pfx"}
+                  or re.fullmatch(r"id_(rsa|ed25519|ecdsa)(\.pub)?", p.name)
+              )
+              if blocked:
+                  raise SystemExit("Forbidden file in Git snapshot: " + item)
+          assert ".local-tests/" in pathlib.Path(".dockerignore").read_text().splitlines()
+          assert pathlib.Path("web/public/wucora-logo.png").is_file()
+          print("Git snapshot file-name checks passed; no credential values printed.")
+          PY
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: '1.4.0'
+
+      - name: Typecheck, test and build the test frontend
+        working-directory: web
+        run: |
+          set -euo pipefail
+          bun install --frozen-lockfile
+          bun run typecheck
+          bun run test
+          bun run build
+
+      - name: Record existing frontend Lint debt
+        id: lint
+        continue-on-error: true
+        working-directory: web
+        run: |
+          # Keep diagnostics out of the build context and candidate artifact.
+          bun run lint > "$RUNNER_TEMP/wucora-lint.log" 2>&1
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            relaykit/go.sum
+            tokenkit/go.sum
+
+      - name: Vet, build and test all backend modules
+        run: |
+          set -euo pipefail
+          go vet ./...
+          go build ./...
+          (cd relaykit && go vet ./... && go build ./...)
+          (cd tokenkit && go vet ./... && go build ./...)
+          make test
+          git diff --exit-code
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Audit the actual Docker build context
+        run: |
+          set -euo pipefail
+          docker buildx build --file - \
+            --output "type=local,dest=$RUNNER_TEMP/wucora-context" . <<'DOCKERFILE'
+          FROM scratch
+          COPY . /
+          DOCKERFILE
+          python3 - <<'PY'
+          import hashlib, os, pathlib, re
+          root = pathlib.Path(os.environ["RUNNER_TEMP"]) / "wucora-context"
+          required = [
+              "Dockerfile", "go.mod", "go.sum", "relaykit/go.mod", "tokenkit/go.mod",
+              "web/package.json", "web/bun.lock", "web/src/main.tsx",
+              "web/src/lib/constants.ts", "web/public/wucora-logo.png",
+              "LICENSE", "NOTICE", "THIRD-PARTY-LICENSES.md", "VERSION",
+          ]
+          for name in required:
+              assert (root / name).is_file(), "Missing build input: " + name
+              assert hashlib.sha256((root / name).read_bytes()).digest() == hashlib.sha256(pathlib.Path(name).read_bytes()).digest(), name
+          for p in root.rglob("*"):
+              rel = p.relative_to(root)
+              if any(part in {".local-tests", ".git", "node_modules"} for part in rel.parts):
+                  raise SystemExit("Forbidden context path: " + str(rel))
+              if not p.is_file():
+                  continue
+              if (p.name.startswith(".env") and p.name != ".env.example") or p.suffix.lower() in {".db", ".sqlite", ".sqlite3", ".log", ".pem", ".key", ".p12", ".pfx"}:
+                  raise SystemExit("Forbidden context file: " + str(rel))
+              data = p.read_bytes()
+              if b"\0" not in data[:8192]:
+                  patterns = [
+                      rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----\s+[A-Za-z0-9+/=\r\n]+-----END",
+                      rb"\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b",
+                      rb"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b",
+                  ]
+                  if any(re.search(pattern, data) for pattern in patterns):
+                      raise SystemExit("Credential pattern in context file: " + str(rel))
+          assert not (root / "web/dist").exists()
+          print("Actual Docker context, required files and high-confidence credential patterns checked.")
+          PY
+
+      - name: Build and load the full test image without publishing
+        id: test_image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          provenance: false
+          tags: ghcr.io/ludafenqi/wuchuang-api:${{ steps.candidate.outputs.tag }}
+          build-args: |
+            SOURCE_REVISION=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/ludafenqi/wuchuang-api
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Verify platform, licenses, embedded brand and runtime filesystem
+        env:
+          TAG: ${{ steps.candidate.outputs.tag }}
+          LINT_RESULT: ${{ steps.lint.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/candidate"
+          docker image inspect "$IMAGE:$TAG" > "$RUNNER_TEMP/candidate/image-inspect.json"
+          cid="$(docker create "$IMAGE:$TAG")"
+          trap 'docker rm "$cid" >/dev/null' EXIT
+          docker export "$cid" --output "$RUNNER_TEMP/wucora-rootfs.tar"
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, tarfile
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          image = json.loads((temp / "candidate/image-inspect.json").read_text())[0]
+          assert (image["Os"], image["Architecture"]) == ("linux", "amd64")
+          assert image["Config"]["Entrypoint"] == ["/new-api"]
+          assert image["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
+          with tarfile.open(temp / "wucora-rootfs.tar") as archive:
+              members = {m.name.removeprefix("./").lstrip("/"): m for m in archive.getmembers()}
+              for name, member in members.items():
+                  p = pathlib.PurePosixPath(name)
+                  assert ".local-tests" not in p.parts, name
+                  if member.isfile():
+                      assert not p.name.startswith(".env"), name
+                      assert p.suffix.lower() not in {".db", ".sqlite", ".sqlite3", ".key", ".p12", ".pfx"}, name
+              for name in ["LICENSE", "NOTICE", "THIRD-PARTY-LICENSES.md"]:
+                  assert archive.extractfile(members["licenses/" + name]).read() == pathlib.Path(name).read_bytes(), name
+              binary = archive.extractfile(members["new-api"]).read()
+              assert pathlib.Path("web/public/wucora-logo.png").read_bytes() in binary, "Logo missing from embedded frontend"
+              assert b"WuCora" in binary, "WuCora brand missing"
+          metadata = {
+              "commit": os.environ["GITHUB_SHA"], "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "image": os.environ["IMAGE"], "tag": os.environ["TAG"],
+              "platform": "linux/amd64", "image_id": image["Id"], "image_size": image["Size"],
+              "build_result": "verified", "registry_digest": None,
+              "lint_outcome": os.environ["LINT_RESULT"],
+              "logo_sha256": hashlib.sha256(pathlib.Path("web/public/wucora-logo.png").read_bytes()).hexdigest(),
+          }
+          (temp / "candidate/build-info.json").write_text(json.dumps(metadata, indent=2) + "\n")
+          PY
+          docker save "$IMAGE:$TAG" | gzip -1 > "$RUNNER_TEMP/candidate/image.tar.gz"
+          (cd "$RUNNER_TEMP/candidate" && sha256sum image.tar.gz > image.tar.gz.sha256)
+
+      - name: Save only the verified image and build metadata
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-test-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/candidate/image.tar.gz
+            ${{ runner.temp }}/candidate/image.tar.gz.sha256
+            ${{ runner.temp }}/candidate/build-info.json
+          compression-level: 0
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Summarize test build and actual Lint outcome
+        if: always()
+        env:
+          BUILD_RESULT: ${{ job.status }}
+          LINT_RESULT: ${{ steps.lint.outcome }}
+          TAG: ${{ steps.candidate.outputs.tag }}
+        run: |
+          {
+            echo '## WuCora test build'
+            echo "Commit: $GITHUB_SHA"
+            echo "Run: $GITHUB_RUN_ID / attempt $GITHUB_RUN_ATTEMPT"
+            echo "Candidate tag: $IMAGE:$TAG"
+            echo 'Target platform: linux/amd64'
+            echo "Build/check result: $BUILD_RESULT"
+            echo "Full frontend Lint outcome: $LINT_RESULT (recorded separately; existing debt is not a pass)"
+            echo 'This job does not publish or deploy. Registry digest is available only after authorized publication.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test-publish:
+    needs: test-build
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-ghcr-test' && inputs.publish_test && inputs.confirm_sha == github.sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/ludafenqi/wuchuang-api
+      TAG: ${{ needs.test-build.outputs.tag }}
+
+    steps:
+      - name: Download verified candidate from this workflow run
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: wucora-test-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Verify archive and load the exact image without rebuilding
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/candidate"
+          sha256sum -c image.tar.gz.sha256
+          gzip -dc image.tar.gz | docker load
+          docker image inspect "$IMAGE:$TAG" > "$RUNNER_TEMP/loaded-image.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          meta = json.loads((temp / "candidate/build-info.json").read_text())
+          image = json.loads((temp / "loaded-image.json").read_text())[0]
+          assert meta["commit"] == os.environ["GITHUB_SHA"]
+          assert meta["run_id"] == os.environ["GITHUB_RUN_ID"]
+          assert meta["run_attempt"] == os.environ["GITHUB_RUN_ATTEMPT"]
+          assert meta["image"] == os.environ["IMAGE"] and meta["tag"] == os.environ["TAG"]
+          assert meta["build_result"] == "verified" and meta["image_id"] == image["Id"]
+          assert (image["Os"], image["Architecture"]) == ("linux", "amd64")
+          assert image["Config"]["Entrypoint"] == ["/new-api"]
+          assert image["Config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
+          PY
+
+      - name: Set up Docker Buildx for registry verification
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to GHCR with the repository token
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4 # v4.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish only the verified unique test tag and record registry digest
+        run: |
+          set -euo pipefail
+          expected="test-${GITHUB_SHA:0:12}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          test "$TAG" = "$expected"
+          docker push "$IMAGE:$TAG"
+          docker buildx imagetools inspect "$IMAGE:$TAG" --format '{{json .Manifest}}' > "$RUNNER_TEMP/registry-manifest.json"
+          digest="$(python3 -c 'import json,os,pathlib,re; d=json.loads((pathlib.Path(os.environ["RUNNER_TEMP"])/"registry-manifest.json").read_text())["digest"]; assert re.fullmatch(r"sha256:[0-9a-f]{64}",d); print(d)')"
+          export DIGEST="$digest"
+          docker buildx imagetools inspect "$IMAGE@$DIGEST" --format '{{json .Image}}' > "$RUNNER_TEMP/registry-image.json"
+          python3 - <<'PY'
+          import json, os, pathlib
+          temp = pathlib.Path(os.environ["RUNNER_TEMP"])
+          remote = json.loads((temp / "registry-image.json").read_text())
+          assert (remote["os"], remote["architecture"]) == ("linux", "amd64")
+          assert remote["config"]["Labels"]["org.opencontainers.image.revision"] == os.environ["GITHUB_SHA"]
+          meta = json.loads((temp / "candidate/build-info.json").read_text())
+          meta.update(registry_digest=os.environ["DIGEST"], publish_result="verified")
+          (temp / "published-image.json").write_text(json.dumps(meta, indent=2) + "\n")
+          PY
+          {
+            echo '## WuCora test image published'
+            echo "Commit: $GITHUB_SHA"
+            echo "Run: $GITHUB_RUN_ID / attempt $GITHUB_RUN_ATTEMPT"
+            echo "Tag: $IMAGE:$TAG"
+            echo "Digest reference: $IMAGE@$DIGEST"
+            echo 'Verified platform: linux/amd64'
+            echo 'Blocking build checks and registry verification passed; full Lint is reported separately.'
+            echo 'No server deployment was performed.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save publication metadata only
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-test-published-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/published-image.json
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Record publication job outcome even on failure
+        if: always()
+        env:
+          PUBLISH_RESULT: ${{ job.status }}
+        run: |
+          {
+            echo "Test publication job result: $PUBLISH_RESULT"
+            echo "Commit: $GITHUB_SHA; run: $GITHUB_RUN_ID / $GITHUB_RUN_ATTEMPT"
+            echo "Tag: $IMAGE:$TAG"
+            echo 'Use a candidate only after the digest and registry checks above succeed.'
+          } >> "$GITHUB_STEP_SUMMARY"

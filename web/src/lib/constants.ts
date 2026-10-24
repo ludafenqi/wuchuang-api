@@ -24,6 +24,13 @@ For commercial licensing, please contact support@quantumnous.com
 export const DEFAULT_SYSTEM_NAME = 'New API'
 export const DEFAULT_LOGO = '/logo.png'
 
+// Site branding is separate from the upstream project identity. Explicit
+// SystemName and Logo settings continue to take precedence over these defaults.
+export const SITE_BRAND = {
+  name: 'WuCora',
+  logo: '/wucora-logo.png',
+} as const
+
 // LocalStorage Keys
 export const STORAGE_KEYS = {
   SYSTEM_NAME: 'system_name',

@@ -7395,6 +7395,8 @@
     "Uses the existing site name and logo. Updating the brand name also updates the site name.": "复用网站名称和 Logo，修改品牌名称也会同步修改网站名称。",
     "Wuchuang AI customizes site branding, footer layouts, visual footer management and this notice. These changes do not imply endorsement by New API or QuantumNous. Modification history and build sources are available in the project repository.": "晤创AI定制了网站品牌、页脚布局、可视化页脚管理及本声明。这些修改不表示 New API 或 QuantumNous 对本服务的认可。修改历史和构建源码可在项目仓库中获取。",
     "Wuchuang AI modifications": "晤创AI定制修改",
-    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "晤创AI提供 AI 模型聚合与 API 服务。本服务基于 New API 定制，由晤创AI独立运营。"
+    "Wuchuang AI provides AI model aggregation and API services. This service is a customized version of New API, independently operated by Wuchuang AI.": "晤创AI提供 AI 模型聚合与 API 服务。本服务基于 New API 定制，由晤创AI独立运营。",
+    "Hide password": "隐藏密码",
+    "Show password": "显示密码"
   }
 }

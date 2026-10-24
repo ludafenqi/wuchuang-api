@@ -95,8 +95,8 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 :root {
-  --radius: 1rem;
-  --app-header-height: 3rem;
+  --radius: 0.75rem;
+  --app-header-height: 4rem;
   /* Static build-channel fallback consumed when JS hasn't booted yet. */
   --app-rev: '2k6e8r7p';
   /* Auto starts with the browser font, including before JS applies the
@@ -136,9 +136,9 @@ For commercial licensing, please contact support@quantumnous.com
   --chart-3: oklch(0.7 0.12 280);
   --chart-4: oklch(0.68 0.19 325);
   --chart-5: oklch(0.68 0.16 155);
-  --overview-accent-1: #4f6bff;
-  --overview-accent-2: #8b5cf6;
-  --overview-accent-3: oklch(0.7 0.12 280);
+  --overview-accent-1: var(--chart-1);
+  --overview-accent-2: var(--chart-2);
+  --overview-accent-3: var(--chart-3);
   --sidebar: #ffffff;
   --sidebar-foreground: #44506b;
   --sidebar-primary: #4962ef;

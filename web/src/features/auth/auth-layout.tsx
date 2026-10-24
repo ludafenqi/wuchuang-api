@@ -31,10 +31,10 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const { systemName, logo, loading } = useSystemConfig()
 
   return (
-    <div className='wcai-auth relative grid h-svh max-w-none'>
+    <div className='wcai-auth relative grid min-h-svh max-w-none lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]'>
       <Link
         to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
+        className='wcai-auth-brand absolute top-5 left-5 z-10 flex items-center gap-3 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
       >
         <div className='relative h-8 w-8'>
           {loading ? (
@@ -53,8 +53,26 @@ export function AuthLayout({ children }: AuthLayoutProps) {
           <h1 className='text-xl font-medium'>{systemName}</h1>
         )}
       </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='wcai-auth-panel mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
+      <div
+        className='wcai-auth-art relative hidden min-h-svh overflow-hidden lg:flex'
+        aria-hidden='true'
+      >
+        <div className='wcai-auth-grid absolute inset-0' />
+        <div className='wcai-auth-orbit absolute inset-0 m-auto'>
+          <span className='wcai-auth-orbit-ring' />
+          <span className='wcai-auth-orbit-ring' />
+          <span className='wcai-auth-orbit-ring' />
+          <span className='wcai-auth-core' />
+          <span className='wcai-auth-node' />
+          <span className='wcai-auth-node' />
+          <span className='wcai-auth-node' />
+        </div>
+        <span className='wcai-auth-wordmark absolute right-10 bottom-12 left-10 text-5xl font-semibold tracking-tight'>
+          {systemName}
+        </span>
+      </div>
+      <div className='wcai-auth-content flex min-w-0 items-center justify-center px-5 pt-28 pb-12 sm:px-10 lg:py-20'>
+        <div className='wcai-auth-panel mx-auto flex w-full max-w-[480px] flex-col justify-center space-y-2 px-6 py-8 sm:p-10'>
           {children}
         </div>
       </div>

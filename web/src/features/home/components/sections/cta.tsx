@@ -36,7 +36,7 @@ export function CTA(props: CTAProps) {
   }
 
   return (
-    <section className='wcai-cta relative z-10 overflow-hidden px-6 py-24 md:py-32'>
+    <section className='wcai-cta relative z-10 overflow-hidden px-5 py-14 sm:px-8 md:py-20'>
       {/* Gradient mesh background */}
       <div
         aria-hidden
@@ -50,10 +50,10 @@ export function CTA(props: CTAProps) {
       />
 
       <AnimateInView
-        className='mx-auto max-w-2xl text-center'
+        className='wcai-cta-panel mx-auto max-w-7xl rounded-3xl border px-6 py-12 text-center sm:px-12 sm:py-16'
         animation='scale-in'
       >
-        <h2 className='text-2xl leading-tight font-bold tracking-tight md:text-4xl'>
+        <h2 className='text-3xl leading-tight font-bold tracking-tight md:text-5xl'>
           {t('Ready to simplify')}
           <br />
           <span className='wcai-brand-text bg-clip-text text-transparent'>
@@ -66,13 +66,16 @@ export function CTA(props: CTAProps) {
           )}
         </p>
         <div className='mt-8 flex items-center justify-center gap-3'>
-          <Button className='group rounded-lg' render={<Link to='/sign-up' />}>
+          <Button
+            className='group h-12 rounded-xl px-6 text-base'
+            render={<Link to='/sign-up' />}
+          >
             {t('Get Started')}
             <ArrowRight className='ml-1 size-3.5 transition-transform duration-200 group-hover:translate-x-0.5' />
           </Button>
           <Button
             variant='outline'
-            className='border-border/50 hover:border-border hover:bg-muted/50 rounded-lg'
+            className='border-border/50 hover:border-border hover:bg-muted/50 h-12 rounded-xl px-6 text-base'
             render={<Link to='/pricing' />}
           >
             {t('View Pricing')}
