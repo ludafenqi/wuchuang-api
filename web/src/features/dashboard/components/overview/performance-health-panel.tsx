@@ -62,18 +62,18 @@ export function PerformanceHealthPanel() {
 
   return (
     <section className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
-      <div className='flex items-center gap-2 border-b px-4 py-3 sm:px-5'>
+      <div className='flex flex-wrap items-center gap-2 border-b px-4 py-4 sm:px-5'>
         <IconBadge tone='success' size='sm'>
           <HeartPulse />
         </IconBadge>
         <h3 className='text-sm font-semibold'>{t('Performance health')}</h3>
-        <span className='text-muted-foreground ml-auto text-xs'>
+        <span className='text-muted-foreground basis-full text-xs sm:ml-auto sm:basis-auto'>
           {t('Performance metrics for the last 24 hours')}
         </span>
       </div>
 
       <div className='space-y-3 p-4 sm:p-5'>
-        <div className='grid grid-cols-3 gap-2'>
+        <div className='grid grid-cols-1 gap-3 @md/content:grid-cols-3'>
           <MetricCell
             icon={HeartPulse}
             label={t('Success rate')}

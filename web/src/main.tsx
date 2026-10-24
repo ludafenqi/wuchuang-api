@@ -22,12 +22,16 @@ import { StrictMode } from 'react'
 import ReactDOM from 'react-dom/client'
 
 import { installBuildMetadata } from '@/lib/build-metadata'
-import { SITE_BRAND } from '@/lib/constants'
-import { applyFaviconToDom } from '@/lib/dom-utils'
+import { applySystemBrandingToDom } from '@/lib/dom-utils'
 import '@/lib/dayjs'
 import { initializeFrontendCache } from '@/lib/frontend-cache'
 import { createAppQueryClient } from '@/lib/query-client'
-import { readCachedStatus, statusQueryOptions } from '@/lib/status-query'
+import {
+  mapStatusDataToConfig,
+  readCachedStatus,
+  statusQueryOptions,
+} from '@/lib/status-query'
+import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { DirectionProvider } from './context/direction-provider'
 import { FontProvider } from './context/font-provider'
@@ -72,32 +76,28 @@ if (!rootElement) {
 ;(function initSystemBranding() {
   try {
     if (typeof window === 'undefined' || typeof document === 'undefined') return
-    const apply = (name: string) => {
-      document.title = name
-      const metaTitle = document.querySelector(
-        'meta[name="title"]'
-      ) as HTMLMetaElement | null
-      if (metaTitle) metaTitle.setAttribute('content', name)
-    }
     // Cache-first
     const cached = readCachedStatus()
-    apply((cached?.system_name as string | undefined) || SITE_BRAND.name)
-    applyFaviconToDom((cached?.logo as string | undefined) || SITE_BRAND.logo)
+    if (cached) {
+      useSystemConfigStore.getState().setConfig(mapStatusDataToConfig(cached))
+    }
+    applySystemBrandingToDom(useSystemConfigStore.getState().config)
+    useSystemConfigStore.subscribe((state, previous) => {
+      if (
+        state.config.systemName !== previous.config.systemName ||
+        state.config.logo !== previous.config.logo
+      ) {
+        applySystemBrandingToDom(state.config)
+      }
+    })
 
     // Background refresh through the shared cache. This primes ['status']
     // before React mounts, so the root guard and every status consumer reuse
     // this one request instead of firing their own. `fetchStatus` owns the
     // localStorage write and the system-config store sync.
-    queryClient
-      .ensureQueryData(statusQueryOptions)
-      .then((s) => {
-        if (!s) return
-        apply((s.system_name as string | undefined) || SITE_BRAND.name)
-        applyFaviconToDom((s.logo as string | undefined) || SITE_BRAND.logo)
-      })
-      .catch(() => {
-        /* empty */
-      })
+    queryClient.ensureQueryData(statusQueryOptions).catch(() => {
+      /* empty */
+    })
   } catch {
     /* empty */
   }

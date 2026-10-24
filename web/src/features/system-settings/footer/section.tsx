@@ -47,7 +47,7 @@ import {
   footerConfigSchema,
   parseFooterConfig,
 } from '@/features/footer/config'
-import { DEFAULT_SYSTEM_NAME, SITE_BRAND } from '@/lib/constants'
+import { SITE_BRAND } from '@/lib/constants'
 
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import {
@@ -74,10 +74,7 @@ export function FooterManagement(props: { settings: SiteSettings }) {
   const form = useForm<FooterFormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      SystemName:
-        props.settings.SystemName === DEFAULT_SYSTEM_NAME
-          ? SITE_BRAND.name
-          : props.settings.SystemName,
+      SystemName: props.settings.SystemName || SITE_BRAND.name,
       config: parseFooterConfig(props.settings.FooterConfig),
     },
   })

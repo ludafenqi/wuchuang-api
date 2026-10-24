@@ -16,6 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { SystemConfig } from '@/stores/system-config-store'
+
+export function applySystemBrandingToDom(
+  config: Pick<SystemConfig, 'systemName' | 'logo'>
+): void {
+  if (typeof document === 'undefined') return
+  document.title = config.systemName
+  document
+    .querySelector('meta[name="title"]')
+    ?.setAttribute('content', config.systemName)
+  applyFaviconToDom(config.logo)
+}
+
 export function applyFaviconToDom(url: string) {
   if (typeof document === 'undefined' || !url) return
   try {

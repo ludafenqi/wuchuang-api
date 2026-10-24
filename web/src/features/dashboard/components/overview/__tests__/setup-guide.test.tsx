@@ -107,6 +107,20 @@ async function renderOverview() {
 }
 
 describe('overview setup guide', () => {
+  it('keeps usage before the expanded setup guide in reading and keyboard order', async () => {
+    window.localStorage.setItem(storageKey, 'expanded')
+    await renderOverview()
+    const usage = await screen.findByRole('heading', {
+      name: 'Usage at a glance',
+    })
+    const setup = await screen.findByRole('heading', {
+      name: 'Build on your API gateway in minutes',
+    })
+    expect(
+      usage.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
   it('shows usage first and only a header entry when setup is complete', async () => {
     await renderOverview()
 

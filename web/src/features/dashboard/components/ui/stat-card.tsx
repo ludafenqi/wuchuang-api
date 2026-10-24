@@ -273,7 +273,7 @@ export function StatCard(props: StatCardProps) {
   } else {
     valueContent = (
       <div className='flex flex-col gap-1'>
-        <div className='wcai-metric-value text-foreground font-mono text-3xl font-semibold tracking-tight break-all tabular-nums sm:text-3xl'>
+        <div className='wcai-metric-value text-foreground text-3xl leading-tight font-semibold tracking-tight break-all tabular-nums'>
           {props.value}
         </div>
         <p
@@ -300,12 +300,12 @@ export function StatCard(props: StatCardProps) {
   return (
     <div
       className={cn(
-        'wcai-stat-card group flex min-h-40 flex-col justify-between gap-4 sm:gap-4',
+        'wcai-stat-card group flex min-h-44 min-w-0 flex-col justify-between gap-4',
         props.compactMobile ? 'gap-1' : 'gap-1.5'
       )}
     >
       <div className='flex items-start justify-between gap-1'>
-        <div className='text-muted-foreground flex items-center gap-2 text-sm font-medium'>
+        <div className='text-muted-foreground flex items-center gap-2 text-xs font-medium sm:text-sm'>
           <IconBadge
             tone={iconTone}
             size='stat'

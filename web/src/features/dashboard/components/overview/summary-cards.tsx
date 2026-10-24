@@ -253,42 +253,40 @@ export function SummaryCards() {
   })
 
   return (
-    <div className='wcai-summary overflow-hidden'>
-      <div className='grid gap-5 xl:grid-cols-[minmax(0,1fr)_19rem]'>
-        <div className='flex min-w-0 flex-col gap-4'>
-          <div className='flex flex-wrap items-start justify-between gap-3'>
-            <div className='flex flex-col gap-1'>
-              <h3 className='text-base font-semibold sm:text-lg'>
-                {t('Usage at a glance')}
-              </h3>
-              <p className='text-muted-foreground text-xs sm:text-sm'>
-                {t('Monitor balance, usage, and request volume')}
-              </p>
-            </div>
-          </div>
-          <StaggerContainer className='grid grid-cols-1 gap-4 @xl/content:grid-cols-3'>
-            {items.map((it) => (
-              <StaggerItem
-                key={it.key}
-                className='wcai-metric bg-card rounded-2xl border p-5 shadow-xs'
-              >
-                <StatCard
-                  title={it.title}
-                  value={it.value}
-                  description={it.desc}
-                  icon={it.icon}
-                  tone={it.tone}
-                  sparkline={it.sparkline}
-                  sparklineVariant={it.sparklineVariant}
-                  loading={loading}
-                  compactMobile
-                />
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
+    <section
+      className='wcai-summary min-w-0 space-y-4'
+      aria-label={t('Usage at a glance')}
+    >
+      <div className='flex flex-wrap items-start justify-between gap-3'>
+        <div className='flex flex-col gap-1'>
+          <h3 className='text-base font-semibold sm:text-lg'>
+            {t('Usage at a glance')}
+          </h3>
+          <p className='text-muted-foreground text-xs sm:text-sm'>
+            {t('Monitor balance, usage, and request volume')}
+          </p>
         </div>
-
-        <div className='wcai-credit bg-card flex flex-col justify-between gap-5 rounded-2xl border p-5 shadow-xs'>
+      </div>
+      <StaggerContainer className='grid min-w-0 grid-cols-1 items-stretch gap-4 @min-[22rem]/content:grid-cols-2 @5xl/content:grid-cols-4'>
+        {items.map((it) => (
+          <StaggerItem
+            key={it.key}
+            className='wcai-metric bg-card min-w-0 rounded-2xl border p-5 shadow-xs'
+          >
+            <StatCard
+              title={it.title}
+              value={it.value}
+              description={it.desc}
+              icon={it.icon}
+              tone={it.tone}
+              sparkline={it.sparkline}
+              sparklineVariant={it.sparklineVariant}
+              loading={loading}
+              compactMobile
+            />
+          </StaggerItem>
+        ))}
+        <StaggerItem className='wcai-credit bg-card flex min-w-0 flex-col justify-between gap-5 rounded-2xl border p-5 shadow-xs'>
           <div className='flex flex-col gap-2 sm:gap-3'>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-xs font-medium'>
@@ -305,11 +303,11 @@ export function SummaryCards() {
               </span>
             </div>
 
-            <div className='font-mono text-3xl font-semibold tracking-tight sm:text-4xl'>
+            <div className='text-3xl leading-tight font-semibold tracking-tight break-all tabular-nums'>
               {formatQuota(remainQuota)}
             </div>
 
-            <div className='grid grid-cols-2 gap-2'>
+            <div className='grid grid-cols-1 gap-2 @5xl/content:grid-cols-2'>
               <div className='bg-background/60 rounded-lg px-2.5 py-2'>
                 <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
                   <Flame className='size-3 shrink-0' aria-hidden='true' />
@@ -351,8 +349,8 @@ export function SummaryCards() {
             <span>{t('Wallet')}</span>
             <ArrowRight data-icon='inline-end' />
           </Button>
-        </div>
-      </div>
-    </div>
+        </StaggerItem>
+      </StaggerContainer>
+    </section>
   )
 }

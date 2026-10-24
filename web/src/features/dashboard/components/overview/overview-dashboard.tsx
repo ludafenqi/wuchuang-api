@@ -646,14 +646,15 @@ export function OverviewDashboard() {
         )}
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='wcai-overview flex flex-col gap-5'>
+        <div className='wcai-overview mx-auto flex w-full max-w-[100rem] flex-col gap-6 sm:gap-8'>
+          <SummaryCards />
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
-              <CardStaggerContainer className='grid items-stretch gap-5 xl:grid-cols-[minmax(0,1fr)_18rem]'>
+              <CardStaggerContainer className='grid items-stretch gap-4 @5xl/content:grid-cols-[minmax(0,1fr)_17rem]'>
                 <CardStaggerItem className='wcai-setup-card bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
                   <div className='relative h-full overflow-hidden p-5 sm:p-7'>
                     <SetupGuideBackdrop />
-                    <div className='relative grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_19rem]'>
+                    <div className='relative grid min-w-0 items-start gap-6 @5xl/content:grid-cols-[minmax(0,1fr)_16rem]'>
                       <div className='flex min-w-0 flex-col gap-5'>
                         <div className='flex flex-wrap items-start justify-between gap-3'>
                           <div className='flex max-w-2xl flex-col gap-1'>
@@ -786,8 +787,6 @@ export function OverviewDashboard() {
               </CardStaggerItem>
             </CardStaggerContainer>
           )}
-
-          <SummaryCards />
 
           {showContentPanels && (
             <CardStaggerContainer

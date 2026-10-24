@@ -7,6 +7,8 @@ import { pluginReact } from '@rsbuild/plugin-react'
 import { pluginTailwindcss } from '@rsbuild/plugin-tailwindcss'
 import { tanstackRouter } from '@tanstack/router-plugin/rspack'
 
+import { SITE_BRAND } from './src/lib/constants'
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ envMode }) => {
@@ -87,8 +89,9 @@ export default defineConfig(({ envMode }) => {
       },
     },
     html: {
+      title: SITE_BRAND.name,
       template: './index.html',
-      favicon: './public/favicon.ico',
+      favicon: './public/wucora-logo.png',
     },
     server: {
       host: '0.0.0.0',

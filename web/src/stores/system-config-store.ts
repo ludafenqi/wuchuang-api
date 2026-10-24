@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import { DEFAULT_LOGO, SITE_BRAND } from '@/lib/constants'
+import { SITE_BRAND } from '@/lib/constants'
 
 export type CurrencyDisplayType = 'USD' | 'CNY' | 'TOKENS' | 'CUSTOM'
 
@@ -78,7 +78,7 @@ export const useSystemConfigStore = create<SystemConfigState>()(
         currency: { ...DEFAULT_CURRENCY_CONFIG },
       },
       loading: true,
-      loadedLogoUrl: DEFAULT_LOGO,
+      loadedLogoUrl: '',
       setConfig: (newConfig) =>
         set((state) => ({
           config: {

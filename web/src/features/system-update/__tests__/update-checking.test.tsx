@@ -106,6 +106,39 @@ afterEach(() => {
 })
 
 describe('administrator update entry', () => {
+  test('shows the actual commit for a test build without treating it as a release', async () => {
+    const status = {
+      version: '',
+      source_revision: '5ce47e8883c5ca51382699d2e60bbc6db6daadb7',
+    }
+    client.setQueryData(STATUS_QUERY_KEY, status)
+    vi.mocked(api.get).mockResolvedValue({
+      data: { success: true, data: status },
+    })
+    const user = userEvent.setup()
+    render(
+      <>
+        <SystemUpdateAction presentation='version' />
+        <UpdateCheckerSection />
+      </>,
+      { wrapper: Wrapper }
+    )
+    const trigger = await screen.findByRole('button', {
+      name: 'System updates, current version: git.5ce47e8883c5',
+    })
+    expect(within(trigger).getByText('git.5ce47e8883c5')).toBeInTheDocument()
+    expect(screen.getAllByText('git.5ce47e8883c5')).toHaveLength(2)
+    await user.click(trigger)
+    const dialog = await screen.findByRole('dialog', { name: 'System updates' })
+    expect(within(dialog).getByText(status.source_revision)).toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('Update available')
+    ).not.toBeInTheDocument()
+    expect(
+      within(dialog).queryByText('No newer version available.')
+    ).not.toBeInTheDocument()
+  })
+
   test.each([null, ROLE.USER])(
     'hides the entry and makes no release request for role %s',
     (role) => {

@@ -21,7 +21,6 @@ import { parseFooterConfig } from '@/features/footer/config'
 import { useSiteFooterNotice } from '@/features/open-source/footer-notice'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { DEFAULT_SYSTEM_NAME, SITE_BRAND } from '@/lib/constants'
 
 import { DemoFooter } from './demo-footer'
 
@@ -38,11 +37,7 @@ export function Footer(props: { className?: string }) {
   return (
     <BrandFooter
       config={config}
-      name={
-        system.systemName && system.systemName !== DEFAULT_SYSTEM_NAME
-          ? system.systemName
-          : SITE_BRAND.name
-      }
+      name={system.systemName}
       logo={system.logo}
       legacyHtml={system.footerHtml}
       availability={{

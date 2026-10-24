@@ -18,6 +18,70 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 
+// Run against the real production UI, with the setup guide expanded.
+export async function assertConsoleOverviewLayout(tab) {
+  const result = await tab.playwright.evaluate(() => {
+    const summary = document.querySelector('.wcai-summary')
+    const guide = document.querySelector('.wcai-setup-card')
+    const cards = [...document.querySelectorAll('.wcai-metric, .wcai-credit')]
+    const bounds = cards.map((card) => card.getBoundingClientRect())
+    const contentWidth = document.querySelector(
+      '[data-slot="sidebar-inset"]'
+    ).clientWidth
+    const columns = new Set(bounds.map((rect) => Math.round(rect.left))).size
+    const legal = document
+      .querySelector('#root > aside')
+      ?.getBoundingClientRect()
+    const content = document
+      .querySelector('[data-slot="sidebar-inset"]')
+      .getBoundingClientRect()
+    return {
+      metricsFirst:
+        !!summary &&
+        !!guide &&
+        Boolean(
+          summary.compareDocumentPosition(guide) &
+          Node.DOCUMENT_POSITION_FOLLOWING
+        ),
+      cardsFit:
+        bounds.length === 4 &&
+        bounds.every(
+          (rect) => rect.width > 0 && rect.left >= 0 && rect.right <= innerWidth
+        ),
+      responsiveColumns: contentWidth < 352 || columns >= 2,
+      alignedDesktop:
+        contentWidth < 1152 ||
+        bounds.every((rect) => Math.abs(rect.top - bounds[0].top) < 1),
+      pageFits: document.documentElement.scrollWidth <= innerWidth,
+      shellFits: document.documentElement.scrollHeight <= innerHeight,
+      contentFits: !legal || content.bottom <= legal.top,
+    }
+  })
+  assert.ok(
+    result.metricsFirst,
+    'Usage must precede onboarding in reading order'
+  )
+  assert.ok(result.cardsFit, 'All four summary cards must fit without clipping')
+  assert.ok(
+    result.responsiveColumns,
+    'Tablet layouts must use the available width for metrics'
+  )
+  assert.ok(result.alignedDesktop, 'Desktop metrics must align in a single row')
+  assert.ok(
+    result.pageFits,
+    'Overview must not introduce horizontal page scrolling'
+  )
+  assert.ok(
+    result.shellFits,
+    'The console and legal entry must share one viewport without a second page scrollbar'
+  )
+  assert.ok(
+    result.contentFits,
+    'The page content must stop above the legal entry'
+  )
+  return result
+}
+
 // Run with a cua tab on the Chinese console overview and local mock branding.
 // Assertions protect rendered text and controls rather than CSS class strings.
 export async function assertConsoleTitleWrapping(tab) {
@@ -77,10 +141,10 @@ export async function assertConsoleHeaderFits(tab) {
       '通知',
       '更改语言',
       '打开主题设置',
-      'P',
     ]
     return {
       brandText: brand?.textContent,
+      profilePresent: !!header?.querySelector('[data-slot="avatar"]'),
       fullBrandVisible: !!brand && brand.clientWidth >= brand.scrollWidth,
       controlsPresent: expected.every((name) =>
         controls.some((c) => c.label === name)
@@ -111,6 +175,7 @@ export async function assertConsoleHeaderFits(tab) {
     result.controlsPresent,
     'All existing header actions must remain available'
   )
+  assert.ok(result.profilePresent, 'The profile menu must remain available')
   assert.ok(result.controlsFit, 'Header actions must fit the viewport')
   assert.ok(result.controlsDoNotOverlap, 'Header actions must not overlap')
   return result

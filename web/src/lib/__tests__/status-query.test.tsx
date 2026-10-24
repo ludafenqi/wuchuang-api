@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
 import { useStatus } from '@/hooks/use-status'
 import { api } from '@/lib/api'
+import { applySystemBrandingToDom } from '@/lib/dom-utils'
 import {
   getModuleAccessForGuard,
   type HeaderNavModule,
@@ -91,7 +92,26 @@ afterEach(() => {
 })
 
 describe('site branding configuration', () => {
-  test.each([{}, { system_name: '', logo: '' }])(
+  test('updates the browser title and favicon when configured branding changes', () => {
+    applySystemBrandingToDom({ systemName: 'WuCora', logo: '/wucora-logo.png' })
+    expect(document.title).toBe('WuCora')
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/wucora-logo.png'
+    )
+    applySystemBrandingToDom({ systemName: 'Custom site', logo: '/custom.png' })
+    expect(document.title).toBe('Custom site')
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/custom.png'
+    )
+  })
+
+  test.each([
+    {},
+    { system_name: '', logo: '' },
+    { system_name: '  ', logo: '  ' },
+  ])(
     'uses WuCora when the status response omits configured branding',
     (status) => {
       expect(mapStatusDataToConfig(status)).toMatchObject({
