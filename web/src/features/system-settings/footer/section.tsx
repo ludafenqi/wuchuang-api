@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
@@ -260,6 +261,30 @@ export function FooterManagement(props: { settings: SiteSettings }) {
               )}
             </p>
             <FooterLinkEditor form={form} />
+            <FormField
+              control={form.control}
+              name='config.openSourceNotice'
+              render={({ field }) => (
+                <FormItem className='min-w-0 rounded-xl border p-4 sm:p-6'>
+                  <FormLabel>{t('Home open-source notice')}</FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Shown only in the public home notice dialog. Supports Markdown and links. Leave blank to show an empty state. Preserve all required copyright and license information.'
+                    )}
+                  </FormDescription>
+                  <FormControl>
+                    <Textarea
+                      {...field}
+                      value={field.value ?? ''}
+                      rows={10}
+                      maxLength={12000}
+                      className='min-h-52 font-mono text-sm'
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             {!form.formState.isValid && form.formState.isSubmitted && (
               <p role='alert' className='text-destructive'>
                 {t('Invalid footer configuration')}
@@ -302,7 +327,11 @@ export function FooterManagement(props: { settings: SiteSettings }) {
         handleConfirm={() => {
           form.setValue(
             'config',
-            { ...defaultFooterConfig(), legacyMode: 'ignore' },
+            {
+              ...defaultFooterConfig(),
+              legacyMode: 'ignore',
+              openSourceNotice: form.getValues('config.openSourceNotice'),
+            },
             { shouldDirty: true, shouldValidate: true }
           )
           setConfirmReset(false)

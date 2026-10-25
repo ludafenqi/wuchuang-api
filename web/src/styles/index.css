@@ -31,6 +31,7 @@ For commercial licensing, please contact support@quantumnous.com
 @import './theme-presets.css';
 
 @import './cloud.css';
+@import './home.css';
 
 /* Preview theme is local, so a light preview remains light in a dark dashboard. */
 .footer-preview-light {

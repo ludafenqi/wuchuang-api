@@ -101,6 +101,7 @@ describe('workspace navigation', () => {
     const user = userEvent.setup()
     await renderRoute(() => (
       <PublicHeader
+        variant='landing'
         navLinks={[{ title: 'Models', href: '/pricing' }]}
         showNotifications={false}
         showAuthButtons={false}

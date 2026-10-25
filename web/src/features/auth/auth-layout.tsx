@@ -27,9 +27,10 @@ import { useSystemConfig } from '@/hooks/use-system-config'
 
 type AuthLayoutProps = {
   children: React.ReactNode
+  storyTitle?: string
 }
 
-export function AuthLayout({ children }: AuthLayoutProps) {
+export function AuthLayout(props: AuthLayoutProps) {
   const { t } = useTranslation()
   const { systemName } = useSystemConfig()
 
@@ -46,8 +47,14 @@ export function AuthLayout({ children }: AuthLayoutProps) {
         <p className='mb-5 text-xs font-medium tracking-[0.16em] uppercase'>
           {t('Unified AI infrastructure')}
         </p>
-        <h2 className='max-w-lg text-4xl leading-[1.25] font-semibold tracking-tight text-balance whitespace-pre-line xl:text-5xl'>
-          {t('One gateway. Every model.')}
+        <h2
+          className={
+            props.storyTitle !== undefined
+              ? 'max-w-none text-3xl leading-[1.25] font-semibold tracking-tight whitespace-nowrap xl:text-[clamp(1.875rem,2.5vw,2.25rem)]'
+              : 'max-w-lg text-4xl leading-[1.25] font-semibold tracking-tight text-balance whitespace-pre-line xl:text-5xl'
+          }
+        >
+          {props.storyTitle ?? t('One gateway. Every model.')}
         </h2>
         <p className='mt-6 max-w-md text-base leading-relaxed opacity-80'>
           {t('Build, connect, and scale your AI applications.')}
@@ -82,7 +89,7 @@ export function AuthLayout({ children }: AuthLayoutProps) {
       </aside>
       <main className='wcai-auth-content flex min-w-0 items-center justify-center px-5 pt-28 pb-12 sm:px-10 lg:py-28'>
         <div className='wcai-auth-panel mx-auto flex w-full max-w-[420px] flex-col justify-center space-y-2'>
-          {children}
+          {props.children}
         </div>
       </main>
     </div>

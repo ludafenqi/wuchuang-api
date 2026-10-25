@@ -52,6 +52,7 @@ type AuthPromptTarget = {
 }
 
 export interface PublicHeaderProps {
+  variant?: 'default' | 'landing'
   navLinks?: TopNavLink[]
   mobileLinks?: TopNavLink[]
   navContent?: React.ReactNode
@@ -190,8 +191,24 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   return (
     <>
-      <header className='wcai-public-header bg-card fixed inset-x-0 top-0 z-50 border-b'>
-        <div className='mx-auto max-w-[1600px] px-4 sm:px-8 xl:px-10'>
+      {props.variant === 'landing' && (
+        <a href='#main-content' className='wucora-skip-link'>
+          {t('Skip to content')}
+        </a>
+      )}
+      <header
+        className={cn(
+          'wcai-public-header bg-card fixed inset-x-0 top-0 z-50 border-b',
+          props.variant === 'landing' && 'wucora-landing-header',
+          props.className
+        )}
+      >
+        <div
+          className={cn(
+            'mx-auto max-w-[1600px] px-4 sm:px-8 xl:px-10',
+            props.variant === 'landing' && 'wucora-nav-frame'
+          )}
+        >
           <nav className='flex h-16 items-center justify-between gap-2'>
             {/* Logo */}
             <div className='@container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
@@ -213,7 +230,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                   )}
                 </span>
               </Link>
-              <SystemUpdateAction presentation='version' />
+              {props.variant === 'landing' ? (
+                <span className='wucora-nav-caption'>{t('AI platform')}</span>
+              ) : (
+                <SystemUpdateAction presentation='version' />
+              )}
             </div>
 
             {/* Desktop nav */}

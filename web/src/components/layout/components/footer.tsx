@@ -16,9 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useContext } from 'react'
+
 import { BrandFooter } from '@/features/footer/brand-footer'
 import { parseFooterConfig } from '@/features/footer/config'
-import { useSiteFooterNotice } from '@/features/open-source/footer-notice'
+import {
+  FooterNoticeContext,
+  useSiteFooterNotice,
+} from '@/features/open-source/footer-notice'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -28,9 +33,10 @@ export function Footer(props: { className?: string }) {
   const system = useSystemConfig()
   const { status } = useStatus()
   const config = parseFooterConfig(status?.footer_config)
-  const demo = system.demoSiteEnabled && !status?.footer_config
+  const isHomeFooter = useContext(FooterNoticeContext) !== null
+  const demo = isHomeFooter && system.demoSiteEnabled && !status?.footer_config
   useSiteFooterNotice(!demo && config.enabled)
-  // Preserve the upstream demonstration site's project navigation and attribution.
+  // Keep demonstration navigation; the home dialog owns the configurable notice.
   if (demo) {
     return <DemoFooter {...props} />
   }
@@ -46,6 +52,8 @@ export function Footer(props: { className?: string }) {
         privacyEnabled: status?.privacy_policy_enabled,
       }}
       className={props.className}
+      showOpenSourceNotice={isHomeFooter}
+      presentation={isHomeFooter ? 'landing' : 'default'}
     />
   )
 }

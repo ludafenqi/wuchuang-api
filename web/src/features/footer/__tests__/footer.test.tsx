@@ -80,30 +80,37 @@ describe('footer configuration', () => {
 
 describe('footer templates', () => {
   it.each(['brand', 'developer', 'minimal'] as const)(
-    'renders the %s template with working links and fixed attribution',
+    'renders the %s template with working product links and one notice entry',
     (layout) => {
       render(
         <BrandFooter
           config={{ ...defaultFooterConfig(), layout }}
           name='晤创AI'
           logo='/configured-logo.png'
+          showOpenSourceNotice
         />
       )
       const footer = screen.getByRole('contentinfo')
       expect(footer).toHaveAttribute('data-layout', layout)
-      expect(
-        screen.getByText(
-          `© ${new Date().getFullYear()} 晤创AI. All rights reserved.`
-        )
-      ).toBeVisible()
-      expect(
-        screen.getByText(
-          'Frontend design and development by New API contributors.'
-        )
-      ).toBeVisible()
+      const copyright = screen.getByText(
+        `© ${new Date().getFullYear()} 晤创AI. All rights reserved.`
+      )
+      expect(copyright).toBeVisible()
+      const copyrightRow = copyright.closest(
+        '[data-slot="footer-copyright-row"]'
+      )
+      expect(copyrightRow).not.toBeNull()
+      const notice = within(footer).getByRole('link', {
+        name: 'Open-source notice',
+      })
+      expect(notice.parentElement).toBe(copyrightRow)
+      expect(copyright.parentElement).toBe(copyrightRow)
       expect(
         within(footer).queryByRole('link', { name: 'New API' })
       ).not.toBeInTheDocument()
+      expect(footer).not.toHaveTextContent(
+        'Frontend design and development by New API contributors.'
+      )
       for (const link of within(footer).getAllByRole('link', {
         name: 'Open-source notice',
       })) {
@@ -174,8 +181,8 @@ describe('footer templates', () => {
     )
     expect(screen.queryByText('Brand')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Open-source notice' })
-    ).toHaveAttribute('href', '/open-source')
+      screen.queryByRole('link', { name: 'Open-source notice' })
+    ).not.toBeInTheDocument()
     view.rerender(
       <BrandFooter
         config={{ ...config, legacyMode: 'append' }}

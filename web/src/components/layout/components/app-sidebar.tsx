@@ -16,19 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link } from '@tanstack/react-router'
-import { BookOpen } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { useTranslation } from 'react-i18next'
 
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarRail,
 } from '@/components/ui/sidebar'
 import { useLayout } from '@/context/layout-provider'
@@ -57,7 +50,6 @@ import { SystemBrand } from './system-brand'
  * in the registry; this component requires no changes.
  */
 export function AppSidebar() {
-  const { t } = useTranslation()
   const { collapsible, variant } = useLayout()
   const { key, view, navGroups } = useSidebarView()
   const shouldReduce = useReducedMotion()
@@ -87,20 +79,6 @@ export function AppSidebar() {
           </motion.div>
         </AnimatePresence>
       </SidebarContent>
-
-      <SidebarFooter className='border-sidebar-border border-t p-3'>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              tooltip={t('Open-source notice')}
-              render={<Link to='/open-source' />}
-            >
-              <BookOpen aria-hidden='true' />
-              <span>{t('Open-source notice')}</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
 
       <SidebarRail />
     </Sidebar>
