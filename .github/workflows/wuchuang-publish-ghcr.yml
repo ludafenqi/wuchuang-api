@@ -138,7 +138,7 @@ jobs:
           echo 'Publishing to GHCR does NOT update the VPS automatically.' >> "$GITHUB_STEP_SUMMARY"
 
   test-build:
-    if: github.repository == 'ludafenqi/wuchuang-api' && (github.ref == 'refs/heads/codex/wucora-ghcr-test' || github.ref == 'refs/heads/codex/wucora-ui-v2')
+    if: github.repository == 'ludafenqi/wuchuang-api' && (github.ref == 'refs/heads/codex/wucora-ghcr-test' || github.ref == 'refs/heads/codex/wucora-ui-v2' || github.ref == 'refs/heads/codex/wucora-ui-v3-home')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -165,7 +165,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_EVENT_NAME" = workflow_dispatch
-          [[ "$GITHUB_REF" == refs/heads/codex/wucora-ghcr-test || "$GITHUB_REF" == refs/heads/codex/wucora-ui-v2 ]]
+          [[ "$GITHUB_REF" == refs/heads/codex/wucora-ghcr-test || "$GITHUB_REF" == refs/heads/codex/wucora-ui-v2 || "$GITHUB_REF" == refs/heads/codex/wucora-ui-v3-home ]]
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           if [ "$PUBLISH_TEST" = true ] && [ "$CONFIRM_SHA" != "$GITHUB_SHA" ]; then
@@ -371,7 +371,7 @@ jobs:
 
   test-publish:
     needs: test-build
-    if: github.repository == 'ludafenqi/wuchuang-api' && (github.ref == 'refs/heads/codex/wucora-ghcr-test' || github.ref == 'refs/heads/codex/wucora-ui-v2') && inputs.publish_test && inputs.confirm_sha == github.sha
+    if: github.repository == 'ludafenqi/wuchuang-api' && (github.ref == 'refs/heads/codex/wucora-ghcr-test' || github.ref == 'refs/heads/codex/wucora-ui-v2' || github.ref == 'refs/heads/codex/wucora-ui-v3-home') && inputs.publish_test && inputs.confirm_sha == github.sha
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
