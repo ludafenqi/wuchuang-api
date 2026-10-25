@@ -23,7 +23,14 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -36,6 +43,7 @@ import { OverviewDashboard } from '../overview-dashboard'
 const storageKey = 'dashboard_overview_setup_guide_expanded'
 let client: QueryClient
 let keyLookupError: Error | null
+let usageLookupError: Error | null
 
 beforeEach(() => {
   window.localStorage.clear()
@@ -52,6 +60,7 @@ beforeEach(() => {
     defaultOptions: { queries: { retry: false } },
   })
   keyLookupError = null
+  usageLookupError = null
   vi.spyOn(api, 'get').mockImplementation(async (url) => {
     switch (url) {
       case '/api/token/?p=1&size=10':
@@ -78,6 +87,7 @@ beforeEach(() => {
       case '/api/user/models':
         return { data: { success: true, data: ['gpt-4o-mini'] } }
       case '/api/data/self':
+        if (usageLookupError) throw usageLookupError
         return { data: { success: true, data: [] } }
       default:
         throw new Error(`Unexpected dashboard request: ${url}`)
@@ -131,9 +141,21 @@ describe('overview setup guide', () => {
     ).toEqual(['Overview', 'Usage at a glance'])
     expect(screen.queryByText('Setup guide complete')).not.toBeInTheDocument()
     expect(screen.queryByText('Setup progress: 3/3')).not.toBeInTheDocument()
-    for (const name of ['API Keys', 'Channels', 'Usage Logs', 'Pricing']) {
-      expect(screen.queryByRole('button', { name })).not.toBeInTheDocument()
-    }
+    const actions = screen.getByRole('navigation', {
+      name: 'Recommended actions',
+    })
+    expect(
+      within(actions).getByRole('button', { name: /^API Keys/ })
+    ).toBeVisible()
+    expect(
+      within(actions).getByRole('button', { name: /^Usage Logs/ })
+    ).toBeVisible()
+    expect(
+      within(actions).getByRole('button', { name: /^Pricing/ })
+    ).toBeVisible()
+    expect(
+      within(actions).queryByRole('button', { name: /^Channels/ })
+    ).not.toBeInTheDocument()
     const panel = document.getElementById(
       toggle.getAttribute('aria-controls') ?? ''
     )
@@ -251,5 +273,31 @@ describe('overview setup guide', () => {
     expect(
       screen.queryByRole('button', { name: 'Setup guide' })
     ).not.toBeInTheDocument()
+  })
+
+  it('places the real balance before supporting metrics and keeps wallet access available', async () => {
+    await renderOverview()
+    const balance = await screen.findByRole('region', {
+      name: 'Credit remaining',
+    })
+    expect(within(balance).getByText(/^\$2(?:\.0+)?$/)).toBeVisible()
+    expect(
+      within(balance).getByRole('button', { name: 'Wallet' })
+    ).toHaveAttribute('href', '/wallet')
+    expect(
+      balance.compareDocumentPosition(screen.getByText('Request Count')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy()
+  })
+
+  it('shows a retry action for failed usage loading and restores the empty chart state after retry', async () => {
+    usageLookupError = new Error('Usage unavailable')
+    const user = userEvent.setup()
+    await renderOverview()
+    expect(await screen.findByText('Failed to load data')).toBeVisible()
+    usageLookupError = null
+    await user.click(screen.getByRole('button', { name: 'Retry' }))
+    expect(await screen.findByText('No data available')).toBeVisible()
+    expect(screen.queryByText('Failed to load data')).not.toBeInTheDocument()
   })
 })

@@ -130,6 +130,7 @@ function SidebarMenuLink({ item, href }: { item: NavLink; href: string }) {
         render={
           <Link
             to={item.url}
+            aria-current={checkIsActive(href, item) ? 'page' : undefined}
             preload={isMobile ? false : undefined}
             onClick={() => setOpenMobile(false)}
           />
@@ -176,7 +177,9 @@ function SidebarMenuCollapsible({
     >
       <CollapsibleTrigger
         className='group/collapsible-trigger'
-        render={<SidebarMenuButton tooltip={item.title} />}
+        render={
+          <SidebarMenuButton tooltip={item.title} isActive={isSubItemActive} />
+        }
       >
         {item.icon && <item.icon className='shrink-0' />}
         <span className='min-w-0 flex-1 truncate'>{item.title}</span>
@@ -192,6 +195,9 @@ function SidebarMenuCollapsible({
                 render={
                   <Link
                     to={subItem.url}
+                    aria-current={
+                      checkIsActive(href, subItem) ? 'page' : undefined
+                    }
                     preload={isMobile ? false : undefined}
                     onClick={() => setOpenMobile(false)}
                   />

@@ -19,11 +19,13 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { ArrowRight, Flame, ShieldCheck, TrendingDown } from 'lucide-react'
-import { useMemo } from 'react'
+import { lazy, Suspense, useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { EmptyState } from '@/components/empty-state'
 import { StaggerContainer, StaggerItem } from '@/components/page-transition'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { getUserQuotaDates } from '@/features/dashboard/api'
 import { useSummaryCardsConfig } from '@/features/dashboard/hooks/use-dashboard-config'
 import type { QuotaDataItem } from '@/features/dashboard/types'
@@ -35,9 +37,16 @@ import { computeTimeRange } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { PanelWrapper } from '../ui/panel-wrapper'
 import { StatCard } from '../ui/stat-card'
 
 const SUMMARY_SPARKLINE_BUCKETS = 12
+
+const UsageChart = lazy(() =>
+  import('../models/consumption-distribution-chart').then((module) => ({
+    default: module.ConsumptionDistributionChart,
+  }))
+)
 
 type SummarySparklineKey = 'balance' | 'usage' | 'requests'
 
@@ -252,6 +261,39 @@ export function SummaryCards() {
     }
   })
 
+  let activityContent: ReactNode
+  if (usageTrendQuery.isError) {
+    activityContent = (
+      <div className='bg-card rounded-xl border p-6'>
+        <EmptyState
+          title={t('Failed to load data')}
+          action={
+            <Button
+              variant='outline'
+              onClick={() => void usageTrendQuery.refetch()}
+            >
+              {t('Retry')}
+            </Button>
+          }
+        />
+      </div>
+    )
+  } else if (usageTrendQuery.isPending) {
+    activityContent = <Skeleton className='h-80 w-full rounded-xl' />
+  } else if (usageTrendQuery.data?.data?.length === 0) {
+    activityContent = <PanelWrapper title={t('Quota Distribution')} empty />
+  } else {
+    activityContent = (
+      <Suspense fallback={<Skeleton className='h-80 w-full rounded-xl' />}>
+        <UsageChart
+          data={usageTrendQuery.data?.data ?? []}
+          timeGranularity='hour'
+          defaultChartType='area'
+        />
+      </Suspense>
+    )
+  }
+
   return (
     <section
       className='wcai-summary min-w-0 space-y-4'
@@ -267,26 +309,11 @@ export function SummaryCards() {
           </p>
         </div>
       </div>
-      <StaggerContainer className='grid min-w-0 grid-cols-1 items-stretch gap-4 @min-[22rem]/content:grid-cols-2 @5xl/content:grid-cols-4'>
-        {items.map((it) => (
-          <StaggerItem
-            key={it.key}
-            className='wcai-metric bg-card min-w-0 rounded-2xl border p-5 shadow-xs'
-          >
-            <StatCard
-              title={it.title}
-              value={it.value}
-              description={it.desc}
-              icon={it.icon}
-              tone={it.tone}
-              sparkline={it.sparkline}
-              sparklineVariant={it.sparklineVariant}
-              loading={loading}
-              compactMobile
-            />
-          </StaggerItem>
-        ))}
-        <StaggerItem className='wcai-credit bg-card flex min-w-0 flex-col justify-between gap-5 rounded-2xl border p-5 shadow-xs'>
+      <StaggerContainer className='wcai-summary-grid grid min-w-0 grid-cols-1 items-stretch gap-5 @4xl/content:grid-cols-[minmax(16rem,0.9fr)_minmax(0,2fr)]'>
+        <section
+          aria-label={t('Credit remaining')}
+          className='wcai-credit flex min-w-0 flex-col justify-between gap-5 rounded-xl border p-6'
+        >
           <div className='flex flex-col gap-2 sm:gap-3'>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground text-xs font-medium'>
@@ -303,11 +330,11 @@ export function SummaryCards() {
               </span>
             </div>
 
-            <div className='text-3xl leading-tight font-semibold tracking-tight break-all tabular-nums'>
+            <div className='text-4xl leading-tight font-semibold tracking-tight break-all tabular-nums'>
               {formatQuota(remainQuota)}
             </div>
 
-            <div className='grid grid-cols-1 gap-2 @5xl/content:grid-cols-2'>
+            <div className='grid grid-cols-2 gap-2'>
               <div className='bg-background/60 rounded-lg px-2.5 py-2'>
                 <div className='text-muted-foreground flex items-center gap-1 text-[11px] leading-none font-medium'>
                   <Flame className='size-3 shrink-0' aria-hidden='true' />
@@ -349,8 +376,30 @@ export function SummaryCards() {
             <span>{t('Wallet')}</span>
             <ArrowRight data-icon='inline-end' />
           </Button>
-        </StaggerItem>
+        </section>
+        <div className='wcai-usage-metrics bg-card grid min-w-0 grid-cols-1 divide-y rounded-xl border @xl/content:grid-cols-3 @xl/content:divide-x @xl/content:divide-y-0'>
+          {items.map((it) => (
+            <StaggerItem key={it.key} className='wcai-metric min-w-0 p-5'>
+              <StatCard
+                title={it.title}
+                value={it.value}
+                description={it.desc}
+                icon={it.icon}
+                tone={it.tone}
+                sparkline={it.sparkline}
+                sparklineVariant={it.sparklineVariant}
+                loading={
+                  loading ||
+                  (it.key === 'todayUsage' && usageTrendQuery.isPending)
+                }
+                error={it.key === 'todayUsage' && usageTrendQuery.isError}
+                compactMobile
+              />
+            </StaggerItem>
+          ))}
+        </div>
       </StaggerContainer>
+      <div className='wcai-activity min-w-0'>{activityContent}</div>
     </section>
   )
 }

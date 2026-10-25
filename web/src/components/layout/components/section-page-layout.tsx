@@ -49,6 +49,11 @@ function SectionPageLayoutBreadcrumb(_props: SlotProps) {
 }
 SectionPageLayoutBreadcrumb.displayName = 'SectionPageLayout.Breadcrumb'
 
+function SectionPageLayoutDescription(_props: SlotProps) {
+  return null
+}
+SectionPageLayoutDescription.displayName = 'SectionPageLayout.Description'
+
 export type SectionPageLayoutProps = {
   children: ReactNode
   fixedContent?: boolean
@@ -64,6 +69,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   let actions: ReactNode = null
   let content: ReactNode = null
   let breadcrumb: ReactNode = null
+  let description: ReactNode = null
 
   Children.forEach(props.children, (node) => {
     if (!isValidElement(node)) return
@@ -75,17 +81,19 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
       content = child.props.children
     } else if (child.type === SectionPageLayoutBreadcrumb) {
       breadcrumb = child.props.children
+    } else if (child.type === SectionPageLayoutDescription) {
+      description = child.props.children
     }
   })
 
   return (
     <PageFooterProvider container={footerContainer}>
       <Main>
-        <div className='wcai-page-heading shrink-0 px-4 pt-6 pb-5 sm:px-7 sm:pt-8 sm:pb-6 lg:px-8'>
+        <div className='wcai-page-heading shrink-0 border-b px-4 py-5 sm:px-8 sm:py-6 lg:px-10'>
           {breadcrumb != null && (
             <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
           )}
-          <div className='flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:gap-x-4'>
+          <div className='flex flex-col items-stretch justify-between gap-4 @3xl/content:flex-row @3xl/content:items-center'>
             <div
               className={
                 props.stackActionsOnMobile
@@ -93,12 +101,17 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
                   : 'min-w-0 flex-1'
               }
             >
-              <h2 className='text-xl leading-tight font-semibold tracking-tight break-words sm:text-2xl'>
+              <h2 className='text-2xl leading-tight font-semibold tracking-tight break-words sm:text-[1.75rem]'>
                 {title}
               </h2>
+              {description != null && (
+                <p className='text-muted-foreground mt-2 max-w-2xl text-sm leading-relaxed'>
+                  {description}
+                </p>
+              )}
             </div>
             {actions != null && (
-              <div className='flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'>
+              <div className='flex max-w-full shrink-0 flex-wrap items-center justify-start gap-2 @3xl/content:justify-end'>
                 {actions}
               </div>
             )}
@@ -108,8 +121,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         <div
           className={
             props.fixedContent
-              ? 'min-h-0 flex-1 overflow-hidden px-4 pt-1 pb-6 sm:px-7 sm:pb-8 lg:px-8'
-              : 'min-h-0 flex-1 overflow-auto px-4 pt-1 pb-6 sm:px-7 sm:pb-8 lg:px-8'
+              ? 'min-h-0 flex-1 overflow-hidden px-4 py-5 sm:px-8 sm:py-6 lg:px-10'
+              : 'min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-8 sm:py-6 lg:px-10'
           }
         >
           {content}
@@ -128,3 +141,4 @@ SectionPageLayout.Title = SectionPageLayoutTitle
 SectionPageLayout.Actions = SectionPageLayoutActions
 SectionPageLayout.Content = SectionPageLayoutContent
 SectionPageLayout.Breadcrumb = SectionPageLayoutBreadcrumb
+SectionPageLayout.Description = SectionPageLayoutDescription

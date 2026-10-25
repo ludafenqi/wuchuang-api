@@ -20,15 +20,16 @@
          Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
     <script>
       ;(function () {
-        var theme = 'system'
+        var theme = 'light'
         try {
-          theme = localStorage.getItem('newapi:theme:v1:mode') || 'system'
+          theme = localStorage.getItem('newapi:theme:v1:mode') || 'light'
         } catch (e) {}
-        if (theme !== 'dark' && theme !== 'light') {
+        if (theme === 'system') {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
             : 'light'
         }
+        if (theme !== 'dark' && theme !== 'light') theme = 'light'
         document.documentElement.classList.add(theme)
       })()
     </script>

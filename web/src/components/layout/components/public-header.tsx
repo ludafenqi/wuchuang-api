@@ -26,6 +26,12 @@ import { NotificationPopover } from '@/components/notification-popover'
 import { ProfileDropdown } from '@/components/profile-dropdown'
 import { ThemeSwitch } from '@/components/theme-switch'
 import { Button } from '@/components/ui/button'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useNotifications } from '@/hooks/use-notifications'
@@ -76,7 +82,6 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   const { t } = useTranslation()
   const navigate = useNavigate()
-  const [scrolled, setScrolled] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [authPromptTarget, setAuthPromptTarget] =
     useState<AuthPromptTarget | null>(null)
@@ -121,20 +126,6 @@ export function PublicHeader(props: PublicHeaderProps) {
   )
   if (isAuthenticated) authContent = <ProfileDropdown />
   if (loading) authContent = <Skeleton className='h-8 w-20 rounded-lg' />
-
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-
-  useEffect(() => {
-    document.body.style.overflow = mobileOpen ? 'hidden' : ''
-    return () => {
-      document.body.style.overflow = ''
-    }
-  }, [mobileOpen])
 
   useEffect(() => {
     if (!authPromptTarget) return
@@ -199,23 +190,9 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   return (
     <>
-      <header className='wcai-public-header pointer-events-none fixed inset-x-0 top-0 z-50'>
-        <div
-          className={cn(
-            'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled
-              ? 'max-w-[52rem] px-3 pt-3'
-              : 'max-w-[88rem] px-4 pt-4 md:px-8'
-          )}
-        >
-          <nav
-            className={cn(
-              'flex items-center justify-between gap-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'bg-background/60 ring-border/50 h-12 rounded-2xl pr-1.5 pl-4 shadow-[0_2px_16px_-6px_rgba(0,0,0,0.08),0_0_0_0.5px_rgba(0,0,0,0.02)] ring-[0.5px] backdrop-blur-2xl dark:shadow-[0_2px_16px_-6px_rgba(0,0,0,0.4)]'
-                : 'h-18 px-4 sm:px-5'
-            )}
-          >
+      <header className='wcai-public-header bg-card fixed inset-x-0 top-0 z-50 border-b'>
+        <div className='mx-auto max-w-[1600px] px-4 sm:px-8 xl:px-10'>
+          <nav className='flex h-16 items-center justify-between gap-2'>
             {/* Logo */}
             <div className='@container/system-brand flex min-w-0 flex-1 items-center gap-1 lg:min-w-36'>
               <Link
@@ -325,6 +302,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                 className='size-9'
                 onClick={() => setMobileOpen((v) => !v)}
                 aria-label={t('Toggle navigation menu')}
+                aria-expanded={mobileOpen}
               >
                 <div className='relative size-4'>
                   <span
@@ -353,82 +331,81 @@ export function PublicHeader(props: PublicHeaderProps) {
       </header>
 
       {/* Mobile full-screen overlay */}
-      <div
-        className={cn(
-          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] lg:pointer-events-none lg:hidden',
-          mobileOpen
-            ? 'pointer-events-auto opacity-100'
-            : 'pointer-events-none opacity-0'
-        )}
-      >
-        <div className='flex h-full flex-col justify-between px-8 pt-20 pb-10'>
-          <nav className='flex flex-col gap-1'>
-            {links.map((link, i) => {
-              const isActive = pathname === link.href
-              const linkClassName = cn(
-                'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
-                mobileOpen
-                  ? 'translate-y-0 opacity-100'
-                  : 'translate-y-4 opacity-0',
-                isActive ? 'text-foreground' : 'text-muted-foreground',
-                link.disabled && 'pointer-events-none opacity-50'
-              )
-              const transitionStyle = {
-                transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
-              }
-              if (link.external) {
+      <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+        <SheetContent side='right' className='w-full sm:max-w-sm'>
+          <SheetHeader>
+            <SheetTitle>{t('Navigation')}</SheetTitle>
+          </SheetHeader>
+          <div className='flex min-h-0 flex-1 flex-col justify-between overflow-y-auto px-6 pb-8'>
+            <nav className='flex flex-col gap-1' aria-label={t('Navigation')}>
+              {links.map((link, i) => {
+                const isActive = pathname === link.href
+                const linkClassName = cn(
+                  'flex items-center gap-3 py-3 text-base font-medium tracking-tight transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+                  mobileOpen
+                    ? 'translate-y-0 opacity-100'
+                    : 'translate-y-4 opacity-0',
+                  isActive ? 'text-foreground' : 'text-muted-foreground',
+                  link.disabled && 'pointer-events-none opacity-50'
+                )
+                const transitionStyle = {
+                  transitionDelay: mobileOpen ? `${100 + i * 50}ms` : '0ms',
+                }
+                if (link.external) {
+                  return (
+                    <a
+                      key={`${link.title}:${link.href}`}
+                      href={link.href}
+                      target='_blank'
+                      rel='noopener noreferrer'
+                      aria-disabled={link.disabled}
+                      tabIndex={link.disabled ? -1 : undefined}
+                      onClick={(event) => handleNavLinkClick(event, link, true)}
+                      className={linkClassName}
+                      style={transitionStyle}
+                    >
+                      {t(link.title)}
+                    </a>
+                  )
+                }
                 return (
-                  <a
+                  <Link
                     key={`${link.title}:${link.href}`}
-                    href={link.href}
-                    target='_blank'
-                    rel='noopener noreferrer'
-                    aria-disabled={link.disabled}
-                    tabIndex={link.disabled ? -1 : undefined}
+                    to={link.href}
+                    disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link, true)}
                     className={linkClassName}
                     style={transitionStyle}
                   >
                     {t(link.title)}
-                  </a>
+                  </Link>
                 )
-              }
-              return (
-                <Link
-                  key={`${link.title}:${link.href}`}
-                  to={link.href}
-                  disabled={link.disabled}
-                  onClick={(event) => handleNavLinkClick(event, link, true)}
-                  className={linkClassName}
-                  style={transitionStyle}
-                >
-                  {t(link.title)}
-                </Link>
-              )
-            })}
-          </nav>
+              })}
+            </nav>
 
-          <div
-            className={cn(
-              'flex flex-col gap-3 transition-all duration-500',
-              mobileOpen
-                ? 'translate-y-0 opacity-100'
-                : 'translate-y-4 opacity-0'
-            )}
-            style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
-          >
-            {showAuthButtons && (
-              <Link
-                to={isAuthenticated ? '/dashboard' : '/sign-in'}
-                onClick={() => setMobileOpen(false)}
-                className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
-              >
-                {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
-              </Link>
-            )}
+            <div
+              className={cn(
+                'flex flex-col gap-3 transition-all duration-500',
+                mobileOpen
+                  ? 'translate-y-0 opacity-100'
+                  : 'translate-y-4 opacity-0'
+              )}
+              style={{ transitionDelay: mobileOpen ? '250ms' : '0ms' }}
+            >
+              {showLanguageSwitcher && <LanguageSwitcher />}
+              {showAuthButtons && (
+                <Link
+                  to={isAuthenticated ? '/dashboard' : '/sign-in'}
+                  onClick={() => setMobileOpen(false)}
+                  className='bg-foreground text-background inline-flex h-10 items-center justify-center rounded-lg text-sm font-medium transition-opacity hover:opacity-90 active:opacity-80'
+                >
+                  {isAuthenticated ? t('Go to Dashboard') : t('Sign in')}
+                </Link>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
+        </SheetContent>
+      </Sheet>
 
       <Dialog
         open={!!authPromptTarget}

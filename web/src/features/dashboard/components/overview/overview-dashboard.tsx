@@ -630,6 +630,9 @@ export function OverviewDashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Overview')}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t('A focused home for keys, balance, routing, and service health.')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Actions>
         {setupStatusReady && setupComplete && (
           <Button
@@ -644,13 +647,33 @@ export function OverviewDashboard() {
             {t('Setup guide')}
           </Button>
         )}
+        <Button
+          variant='outline'
+          render={
+            <Link to='/dashboard/$section' params={{ section: 'models' }} />
+          }
+        >
+          {t('Model Call Analytics')}
+        </Button>
+        <Button render={<Link to='/keys' />}>
+          <KeyRound aria-hidden='true' />
+          {t('Create API Key')}
+        </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='wcai-overview mx-auto flex w-full max-w-[100rem] flex-col gap-6 sm:gap-8'>
           <SummaryCards />
+          <nav
+            aria-label={t('Recommended actions')}
+            className='wcai-action-ribbon grid grid-cols-1 gap-0 sm:grid-cols-2 xl:grid-cols-4'
+          >
+            {visibleQuickActions.map((action) => (
+              <QuickActionItem key={action.title} action={action} />
+            ))}
+          </nav>
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
-              <CardStaggerContainer className='grid items-stretch gap-4 @5xl/content:grid-cols-[minmax(0,1fr)_17rem]'>
+              <CardStaggerContainer className='grid items-stretch gap-4'>
                 <CardStaggerItem className='wcai-setup-card bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
                   <div className='relative h-full overflow-hidden p-5 sm:p-7'>
                     <SetupGuideBackdrop />
@@ -708,24 +731,6 @@ export function OverviewDashboard() {
                         example={requestExample}
                         signals={heroSignals}
                       />
-                    </div>
-                  </div>
-                </CardStaggerItem>
-
-                <CardStaggerItem className='wcai-quick-actions bg-card h-full rounded-2xl border p-5 shadow-xs sm:p-6'>
-                  <div className='flex h-full flex-col gap-4'>
-                    <div className='flex flex-col gap-1'>
-                      <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                        {t('Recommended actions')}
-                      </div>
-                      <h3 className='text-lg font-semibold tracking-tight'>
-                        {t('Keep the platform ready')}
-                      </h3>
-                    </div>
-                    <div className='grid gap-3 sm:grid-cols-2 xl:grid-cols-1'>
-                      {visibleQuickActions.map((action) => (
-                        <QuickActionItem key={action.title} action={action} />
-                      ))}
                     </div>
                   </div>
                 </CardStaggerItem>

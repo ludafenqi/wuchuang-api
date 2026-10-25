@@ -1,0 +1,325 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+/* WuCora workspace geometry. Theme presets and explicit density/radius
+ * preferences continue to own the semantic tokens. */
+.wcai-public,
+.wcai-console,
+.wcai-auth {
+  --wcai-brand-deep: color-mix(in oklch, var(--primary) 28%, #14233f);
+}
+
+#root:has(.wcai-console) {
+  display: flex;
+  flex-direction: column;
+  height: 100svh;
+  overflow: hidden;
+}
+
+#root > .wcai-console {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+#root:has(.wcai-console) > aside {
+  flex-shrink: 0;
+}
+
+.wcai-console [data-slot='sidebar-container'] {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  height: 100%;
+}
+
+.wcai-console [data-slot='sidebar-inset'] {
+  background: var(--background);
+  min-width: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.wcai-app-header {
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+.wcai-app-header > div {
+  padding-inline: 1.25rem;
+  gap: 0.75rem;
+}
+
+.wcai-page-heading {
+  background: var(--card);
+}
+
+.wcai-page-heading h2 {
+  letter-spacing: -0.035em;
+}
+
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-group'] {
+  padding: 0.65rem 0.75rem;
+}
+
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-group-label'] {
+  color: var(--muted-foreground);
+  font-size: 0.65rem;
+  letter-spacing: 0.09em;
+  margin-bottom: 0.5rem;
+}
+
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu'] {
+  gap: 0.25rem;
+}
+
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu-button'][data-size='default'] {
+  min-height: 2.65rem;
+  height: auto;
+  padding: 0.65rem 0.75rem;
+  gap: 0.75rem;
+  border-radius: var(--radius-md);
+}
+
+:is(.wcai-console, [data-slot='sidebar'][data-mobile='true'])
+  [data-slot='sidebar-menu-button'][data-active] {
+  background: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
+  font-weight: 600;
+  box-shadow: inset 3px 0 var(--sidebar-primary);
+}
+
+.wcai-console [data-collapsible='icon'] [data-slot='sidebar-group'] {
+  padding-inline: 0.5rem;
+}
+
+.wcai-console [data-collapsible='icon'] [data-slot='sidebar-menu-button'] {
+  min-height: 2rem;
+  padding: 0.5rem;
+}
+
+.wcai-console [data-collapsible='icon'] .wcai-sidebar-brand {
+  padding-inline: 0.5rem;
+}
+
+/* Balance leads the reading order; the three supporting metrics form a
+ * single divided surface instead of four identical cards. */
+.wcai-credit {
+  --foreground: #ffffff;
+  --muted-foreground: #d6def5;
+  --background: #ffffff14;
+  --success: #86efac;
+  --warning: #fde68a;
+  --destructive: #fda4af;
+  --border: #ffffff24;
+  color: var(--foreground);
+  background: var(--wcai-brand-deep);
+}
+
+.wcai-credit [data-slot='button'] {
+  background: #ffffff;
+  color: #23365f;
+}
+
+.wcai-credit [data-slot='button']:hover {
+  background: #e9edff;
+}
+
+.wcai-stat-card {
+  min-height: 12rem;
+}
+
+@container content (max-width: 36rem) {
+  .wcai-usage-metrics .wcai-metric {
+    padding: 1rem;
+  }
+  .wcai-usage-metrics .wcai-stat-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    min-height: 0;
+  }
+  .wcai-usage-metrics .wcai-metric-value {
+    font-size: 1.5rem;
+  }
+  .wcai-usage-metrics .wcai-metric-chart {
+    grid-column: 1 / -1;
+  }
+}
+
+.wcai-action-ribbon {
+  border-block: 1px solid var(--border);
+}
+
+.wcai-action-ribbon [data-slot='button'] {
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 1rem;
+  background: transparent;
+  box-shadow: none;
+  white-space: normal;
+}
+
+.wcai-action-ribbon [data-slot='button']:hover {
+  background: var(--accent);
+}
+
+.wcai-setup-card {
+  border-color: var(--border);
+}
+
+.wcai-chart-panel {
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+}
+
+.wcai-model-card {
+  border: 1px solid var(--border);
+  --tw-ring-color: transparent;
+}
+
+.wcai-model-card:hover {
+  border-color: color-mix(in oklch, var(--primary) 60%, var(--border));
+}
+
+.wcai-plan-featured {
+  border-top: 4px solid var(--primary);
+  background: color-mix(in oklch, var(--primary) 3%, var(--card));
+}
+
+.wcai-auth {
+  background: var(--card);
+}
+
+.wcai-auth-story {
+  background: var(--wcai-brand-deep);
+  color: #f0f4ff;
+}
+
+.wcai-auth-flow {
+  background: #ffffff08;
+  border-color: #ffffff26;
+}
+
+.wcai-auth-flow > div {
+  border-color: #ffffff26;
+}
+
+.wcai-auth-panel h2 {
+  font-size: 1.875rem;
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+}
+
+@layer components {
+  .wcai-auth-panel [data-slot='input'],
+  .wcai-auth-panel input[data-slot='form-control'],
+  .wcai-auth-panel [data-slot='button'][type='submit'] {
+    min-height: 2.875rem;
+  }
+}
+
+/* Public home retains its branded sections and the existing content. */
+.wcai-hero {
+  background: linear-gradient(180deg, var(--card), var(--background));
+}
+
+.wcai-brand-text {
+  background-image: linear-gradient(110deg, var(--primary), var(--chart-2));
+}
+
+.wcai-hero h1 {
+  letter-spacing: -0.045em;
+}
+
+.wcai-terminal {
+  position: relative;
+  padding: 0.6rem;
+  border-radius: var(--radius-2xl);
+  background: var(--wcai-brand-deep);
+}
+
+.wcai-terminal > div {
+  border-radius: var(--radius-lg);
+}
+
+.wcai-cta-panel {
+  background: var(--card);
+  border-color: var(--border);
+}
+
+.wcai-public-header nav a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+@media (min-width: 1024px) {
+  .wcai-auth-brand {
+    --foreground: #f0f4ff;
+    --accent: #ffffff18;
+  }
+}
+
+@media (max-width: 639px) {
+  .wcai-app-header > div {
+    padding-inline: 0.5rem;
+    gap: 0.25rem;
+  }
+  .wcai-header-actions {
+    gap: 0;
+  }
+  .wcai-header-brand {
+    overflow: hidden;
+  }
+  .wcai-hero h1 {
+    font-size: clamp(2rem, 8.5vw, 2.5rem);
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+}
+
+@media (max-width: 389px) {
+  .wcai-app-header {
+    height: auto;
+    min-height: var(--app-header-height);
+  }
+  .wcai-app-header > div {
+    flex-wrap: wrap;
+    padding-block: 0.5rem;
+  }
+  .wcai-header-brand {
+    min-width: 7rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.wcai-public, .wcai-console, .wcai-auth) *,
+  :is(.wcai-public, .wcai-console, .wcai-auth) *::before,
+  :is(.wcai-public, .wcai-console, .wcai-auth) *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+    animation-iteration-count: 1 !important;
+  }
+}
