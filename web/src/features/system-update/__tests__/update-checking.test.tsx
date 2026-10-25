@@ -54,6 +54,7 @@ const release = {
   published_at: '2026-09-08T13:01:00Z',
   body: 'Release notes for administrators.',
 }
+const clientRevision = '3b1a9307a511ae153a09080386b7591d81b46f9d'
 const fetchMock = vi.fn<typeof fetch>()
 let client: QueryClient
 
@@ -73,6 +74,8 @@ function respondWithRelease(tag = release.tag_name): void {
 }
 
 beforeEach(() => {
+  // Each fixture supplies its own build metadata, independent of the CI runner.
+  vi.stubEnv('VITE_SOURCE_REVISION', '')
   localStorage.clear()
   useSystemUpdateStore.setState({ snapshot: null })
   useSystemUpdatePreferencesStore.setState({ ignoredVersionsByUserId: {} })
@@ -101,12 +104,14 @@ afterEach(() => {
   focusManager.setFocused(undefined)
   onlineManager.setOnline(true)
   vi.useRealTimers()
+  vi.unstubAllEnvs()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
 describe('administrator update entry', () => {
   test('shows the actual commit for a test build without treating it as a release', async () => {
+    vi.stubEnv('VITE_SOURCE_REVISION', clientRevision)
     const status = {
       version: '',
       source_revision: '5ce47e8883c5ca51382699d2e60bbc6db6daadb7',
@@ -403,6 +408,36 @@ describe('administrator update entry', () => {
 })
 
 describe('version label presentation', () => {
+  test.each(['', 'v0.0.0', '0.0.0'])(
+    'shows the compiled client commit when the server version is %s and supplies no commit',
+    async (version) => {
+      vi.stubEnv('VITE_SOURCE_REVISION', clientRevision)
+      const status = { version }
+      client.setQueryData(STATUS_QUERY_KEY, status)
+      vi.mocked(api.get).mockResolvedValue({
+        data: { success: true, data: status },
+      })
+      const user = userEvent.setup()
+      render(<SystemUpdateAction presentation='version' />, {
+        wrapper: Wrapper,
+      })
+      const trigger = screen.getByRole('button', {
+        name: 'System updates, current version: git.3b1a9307a511',
+      })
+      expect(within(trigger).getByText('git.3b1a9307a511')).toBeInTheDocument()
+      await waitFor(() => expect(trigger).toHaveAttribute('aria-busy', 'false'))
+      await user.click(trigger)
+      const dialog = screen.getByRole('dialog', { name: 'System updates' })
+      expect(within(dialog).getByText(clientRevision)).toBeInTheDocument()
+      expect(
+        within(dialog).queryByText('Update available')
+      ).not.toBeInTheDocument()
+      expect(
+        within(dialog).queryByText('No newer version available.')
+      ).not.toBeInTheDocument()
+    }
+  )
+
   test('keeps the current version visible while checking and after finding no newer version', async () => {
     let finishRequest: ((response: Response) => void) | undefined
     fetchMock.mockImplementation(
