@@ -86,6 +86,10 @@ describe('registration brand headline', () => {
     })
     expect(title.textContent).toBe('万千模型任你使用')
     expect(title.querySelector('br')).toBeNull()
+    expect(title.textContent).not.toMatch(/[\r\n]/)
+    expect(
+      screen.queryByRole('heading', { name: /一个网关/ })
+    ).not.toBeInTheDocument()
     expect(
       screen.getByText(
         zh.translation['Build, connect, and scale your AI applications.']
@@ -96,7 +100,7 @@ describe('registration brand headline', () => {
     ).toBeVisible()
     expect(screen.getByLabelText(zh.translation.Username)).toBeVisible()
   })
-  it('keeps the original shared headline for authentication pages that do not supply a registration title', async () => {
+  it('keeps the original shared headline for authentication pages that do not supply a page-specific title', async () => {
     await renderAuthPage(() => (
       <AuthLayout>
         <p>Existing authentication content</p>
