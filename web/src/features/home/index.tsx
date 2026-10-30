@@ -20,13 +20,17 @@ import { useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
-import { Footer } from '@/components/layout/components/footer'
 import { RichContent } from '@/components/rich-content'
 import { useTheme } from '@/context/theme-provider'
+import { useStatus } from '@/hooks/use-status'
 import { isLikelyHtml } from '@/lib/content-format'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { CTA, Features, Hero, HowItWorks, Stats } from './components'
+import { AccountWorkspace } from './components/account-workspace'
+import { HomeFooter } from './components/home-footer'
+import { IntegrationWorkspace } from './components/integration-workspace'
+import { LandingHero } from './components/landing-hero'
+import { ModelDiscovery } from './components/model-discovery'
 import { useHomePageContent } from './hooks'
 
 export function Home() {
@@ -35,6 +39,8 @@ export function Home() {
   const { resolvedTheme } = useTheme()
   const { auth } = useAuthStore()
   const isAuthenticated = !!auth.user
+  const { status } = useStatus()
+  const registrationEnabled = status?.register_enabled !== false
   const { content, isLoaded, isUrl } = useHomePageContent()
 
   const syncIframePreferences = useCallback(() => {
@@ -88,6 +94,7 @@ export function Home() {
             sandbox='allow-forms allow-popups allow-popups-to-escape-sandbox allow-scripts allow-top-navigation-by-user-activation'
             onLoad={syncIframePreferences}
           />
+          <HomeFooter />
         </PublicLayout>
       )
     }
@@ -103,6 +110,7 @@ export function Home() {
             content={content}
             className='custom-home-content'
           />
+          <HomeFooter />
         </PublicLayout>
       )
     }
@@ -116,18 +124,30 @@ export function Home() {
             className='custom-home-content'
           />
         </div>
+        <HomeFooter />
       </PublicLayout>
     )
   }
 
   return (
-    <PublicLayout showMainContainer={false}>
-      <Hero isAuthenticated={isAuthenticated} />
-      <Stats />
-      <Features />
-      <HowItWorks />
-      <CTA isAuthenticated={isAuthenticated} />
-      <Footer />
+    <PublicLayout
+      showMainContainer={false}
+      headerProps={{ variant: 'landing' }}
+      className='wucora-landing'
+    >
+      <main id='main-content'>
+        <LandingHero
+          isAuthenticated={isAuthenticated}
+          registrationEnabled={registrationEnabled}
+        />
+        <ModelDiscovery />
+        <IntegrationWorkspace />
+        <AccountWorkspace
+          isAuthenticated={isAuthenticated}
+          registrationEnabled={registrationEnabled}
+        />
+      </main>
+      <HomeFooter />
     </PublicLayout>
   )
 }

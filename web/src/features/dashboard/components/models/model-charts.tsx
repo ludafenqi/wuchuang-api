@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { IconBadge } from '@/components/ui/icon-badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useThemeCustomization } from '@/context/theme-customization-provider'
 import { useTheme } from '@/context/theme-provider'
 import {
@@ -119,7 +120,11 @@ export function ModelCharts(props: ModelChartsProps) {
   ].join('-')
 
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <Tabs
+      value={activeTab}
+      onValueChange={(value) => setActiveTab(value as ModelAnalyticsChartTab)}
+      className='wcai-chart-panel bg-card min-w-0 gap-0 overflow-hidden rounded-2xl border shadow-xs'
+    >
       <div className='flex w-full flex-col gap-1.5 border-b px-3 py-2 sm:gap-3 sm:px-5 sm:py-3 lg:flex-row lg:items-center lg:justify-between'>
         <div className='flex items-center gap-2'>
           <IconBadge tone='chart-4' size='sm'>
@@ -133,25 +138,23 @@ export function ModelCharts(props: ModelChartsProps) {
           </span>
         </div>
 
-        <div className='bg-muted/60 inline-flex h-7 w-full overflow-x-auto rounded-lg border p-0.5 sm:h-8 sm:w-auto'>
+        <TabsList
+          aria-label={t('Model Call Analytics')}
+          className='h-9 max-w-full min-w-0 overflow-x-auto'
+        >
           {MODEL_ANALYTICS_CHART_OPTIONS.map((tab) => (
-            <button
+            <TabsTrigger
               key={tab.value}
-              type='button'
-              onClick={() => setActiveTab(tab.value)}
-              className={`shrink-0 rounded-md px-3 text-xs font-medium transition-colors ${
-                activeTab === tab.value
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              }`}
+              value={tab.value}
+              className='shrink-0 px-3 text-xs'
             >
               {t(tab.labelKey)}
-            </button>
+            </TabsTrigger>
           ))}
-        </div>
+        </TabsList>
       </div>
 
-      <div className='h-[300px] p-1.5 sm:h-96 sm:p-2'>
+      <TabsContent value={activeTab} className='h-80 p-3 sm:h-[25rem] sm:p-5'>
         {themeReady && spec && (
           <VChart
             key={chartKey}
@@ -163,7 +166,7 @@ export function ModelCharts(props: ModelChartsProps) {
             option={VCHART_OPTION}
           />
         )}
-      </div>
-    </div>
+      </TabsContent>
+    </Tabs>
   )
 }

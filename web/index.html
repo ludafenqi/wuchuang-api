@@ -6,8 +6,9 @@
     <meta name="google" content="notranslate" />
 
     <!-- Primary Meta Tags -->
-    <title>New API</title>
-    <meta name="title" content="New API" />
+    <title><%= htmlPlugin.options.title %></title>
+    <meta name="title" content="<%= htmlPlugin.options.title %>" />
+    <meta name="upstream-project" content="New API" />
     <meta
       name="description"
       content="Unified AI API gateway and admin dashboard."
@@ -19,15 +20,16 @@
          Keep in sync with ThemeProvider and THEME_STORAGE_KEYS.mode. -->
     <script>
       ;(function () {
-        var theme = 'system'
+        var theme = 'light'
         try {
-          theme = localStorage.getItem('newapi:theme:v1:mode') || 'system'
+          theme = localStorage.getItem('newapi:theme:v1:mode') || 'light'
         } catch (e) {}
-        if (theme !== 'dark' && theme !== 'light') {
+        if (theme === 'system') {
           theme = window.matchMedia('(prefers-color-scheme: dark)').matches
             ? 'dark'
             : 'light'
         }
+        if (theme !== 'dark' && theme !== 'light') theme = 'light'
         document.documentElement.classList.add(theme)
       })()
     </script>

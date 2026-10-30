@@ -249,7 +249,7 @@ export function StatCard(props: StatCardProps) {
         <Skeleton
           className={cn(
             'h-3 w-24 sm:h-3.5 sm:w-32',
-            props.compactMobile && 'hidden sm:block'
+            props.compactMobile && 'block'
           )}
         />
       </div>
@@ -262,8 +262,8 @@ export function StatCard(props: StatCardProps) {
         </div>
         <p
           className={cn(
-            'text-muted-foreground/60 line-clamp-1 text-[11px] sm:text-xs',
-            props.compactMobile && 'hidden sm:block'
+            'text-muted-foreground line-clamp-1 text-[11px] sm:text-xs',
+            props.compactMobile && 'block'
           )}
         >
           {props.description}
@@ -273,13 +273,13 @@ export function StatCard(props: StatCardProps) {
   } else {
     valueContent = (
       <div className='flex flex-col gap-1'>
-        <div className='text-foreground font-mono text-base font-semibold tracking-tight break-all tabular-nums sm:text-2xl'>
+        <div className='wcai-metric-value text-foreground text-3xl leading-tight font-semibold tracking-tight break-all tabular-nums'>
           {props.value}
         </div>
         <p
           className={cn(
-            'text-muted-foreground/60 line-clamp-1 text-[11px] leading-relaxed sm:text-xs',
-            props.compactMobile && 'hidden sm:block'
+            'text-muted-foreground line-clamp-1 text-[11px] leading-relaxed sm:text-xs',
+            props.compactMobile && 'block'
           )}
         >
           {props.description}
@@ -300,32 +300,30 @@ export function StatCard(props: StatCardProps) {
   return (
     <div
       className={cn(
-        'group flex flex-col justify-between sm:min-h-32 sm:gap-3',
+        'wcai-stat-card group flex min-h-44 min-w-0 flex-col justify-between gap-4',
         props.compactMobile ? 'gap-1' : 'gap-1.5'
       )}
     >
       <div className='flex items-start justify-between gap-1'>
-        <div className='text-muted-foreground flex items-center gap-1 text-[11px] font-medium sm:gap-2 sm:text-xs'>
+        <div className='text-muted-foreground flex items-center gap-2 text-xs font-medium sm:text-sm'>
           <IconBadge
             tone={iconTone}
             size='stat'
             className={cn(
               props.compactMobile &&
-                'size-4 rounded-sm [&>svg]:size-2.5 sm:size-7 sm:rounded-md sm:[&>svg]:size-3.5'
+                'size-9 rounded-xl [&>svg]:size-4 sm:size-9 sm:rounded-xl sm:[&>svg]:size-4'
             )}
           >
             <Icon />
           </IconBadge>
-          <span className='line-clamp-1 leading-snug sm:line-clamp-2'>
-            {props.title}
-          </span>
+          <span className='line-clamp-2 leading-snug'>{props.title}</span>
         </div>
         {props.action && <div className='shrink-0'>{props.action}</div>}
       </div>
 
       {valueContent}
 
-      <div className='hidden sm:block'>{visualization}</div>
+      <div className='wcai-metric-chart'>{visualization}</div>
     </div>
   )
 }

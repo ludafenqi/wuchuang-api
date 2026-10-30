@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Link, useLocation } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import { useContext, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -31,13 +31,12 @@ export function FooterNoticeProvider(props: { children: ReactNode }) {
   )
 }
 
-// Outside configurable Footer/About content: the required legal entry cannot
-// disappear when either setting is empty, replaced or disabled.
+// Composed only by the public home. Keep a legal entry even when its
+// administrator-configured business footer is disabled.
 export function OpenSourceAccess() {
   const { t } = useTranslation()
-  const pathname = useLocation({ select: (location) => location.pathname })
   const footer = useContext(FooterNoticeContext)
-  if (footer?.present || pathname.replace(/\/$/, '') === '/open-source') {
+  if (!footer || footer.present) {
     return null
   }
   return (

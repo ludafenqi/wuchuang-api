@@ -36,12 +36,17 @@ export function SettingsSection({
   const suppressHeader = useSuppressSettingsSectionHeader()
 
   return (
-    <section className={cn('flex flex-col gap-4', className)}>
+    <section
+      className={cn(
+        'wcai-settings-section bg-card flex min-w-0 flex-col gap-5 rounded-2xl border p-5 shadow-xs sm:p-6',
+        className
+      )}
+    >
       {!suppressHeader && (
-        <div className='flex flex-col gap-1'>
+        <div className='flex flex-col gap-1 border-b pb-4'>
           <h3
             {...titleProps}
-            className={cn('text-base font-semibold', titleProps?.className)}
+            className={cn('text-lg font-semibold', titleProps?.className)}
           >
             {title}
           </h3>

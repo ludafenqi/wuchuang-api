@@ -266,10 +266,10 @@ export function SubscriptionPlansCard({
         icon={<Crown className='h-4 w-4' />}
         iconTone='warning'
         disableHoverEffect
-        contentClassName='space-y-4 sm:space-y-5'
+        contentClassName='@container space-y-4 sm:space-y-5'
       >
         {/* My subscriptions & billing preference */}
-        <div className='rounded-xl border p-3 sm:p-4'>
+        <div className='bg-background rounded-xl border p-4 sm:p-5'>
           <div className='flex flex-wrap items-center justify-between gap-2.5 sm:gap-3'>
             <div className='flex min-w-0 flex-wrap items-center gap-2'>
               <span className='text-sm font-medium'>
@@ -372,6 +372,7 @@ export function SubscriptionPlansCard({
                 className='h-8 w-8'
                 onClick={handleRefresh}
                 disabled={refreshing}
+                aria-label={t('Refresh')}
               >
                 <RefreshCw
                   className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`}
@@ -524,7 +525,7 @@ export function SubscriptionPlansCard({
 
         {/* Available plans grid */}
         {plans.length > 0 ? (
-          <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
+          <div className='wcai-plan-grid grid grid-cols-1 items-stretch gap-5 @2xl:grid-cols-2 @4xl:grid-cols-3'>
             {plans.map((p, index) => {
               const plan = p?.plan
               if (!plan) return null
@@ -553,16 +554,19 @@ export function SubscriptionPlansCard({
                 <Card
                   key={plan.id}
                   data-card-hover='false'
-                  className={cn(isPopular && 'border-primary/70 shadow-sm')}
+                  className={cn(
+                    'wcai-plan gap-0 border py-0 ring-0',
+                    isPopular && 'wcai-plan-featured border-primary'
+                  )}
                 >
-                  <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
-                    <div className='mb-2 flex items-start justify-between gap-3'>
+                  <CardContent className='flex h-full flex-col p-5 sm:p-6'>
+                    <div className='mb-4 flex min-h-14 flex-wrap items-start justify-between gap-3'>
                       <div className='min-w-0'>
-                        <h4 className='truncate font-semibold'>
+                        <h4 className='text-lg font-semibold break-words'>
                           {plan.title || t('Subscription Plans')}
                         </h4>
                         {plan.subtitle && (
-                          <p className='text-muted-foreground truncate text-xs'>
+                          <p className='text-muted-foreground mt-1 text-sm break-words'>
                             {plan.subtitle}
                           </p>
                         )}
@@ -579,19 +583,25 @@ export function SubscriptionPlansCard({
                       )}
                     </div>
 
-                    <div className='py-2'>
-                      <span className='text-primary text-2xl font-bold'>
+                    <div className='mb-5 border-b pb-5'>
+                      <span className='text-foreground text-4xl font-semibold tracking-tight tabular-nums'>
                         ${price}
+                      </span>
+                      <span className='text-muted-foreground mt-2 block text-xs'>
+                        {formatDuration(plan, t)}
                       </span>
                     </div>
 
-                    <div className='flex-1 space-y-1.5 pb-3'>
+                    <div className='flex-1 space-y-3 pb-5'>
                       {benefits.map((label) => (
                         <div
                           key={label}
-                          className='text-muted-foreground flex items-center gap-2 text-xs'
+                          className='text-muted-foreground flex items-start gap-2 text-sm leading-relaxed'
                         >
-                          <Check className='text-primary h-3 w-3 shrink-0' />
+                          <Check
+                            className='text-primary mt-1 size-4 shrink-0'
+                            aria-hidden='true'
+                          />
                           <span>{label}</span>
                         </div>
                       ))}
@@ -612,8 +622,8 @@ export function SubscriptionPlansCard({
                       </Tooltip>
                     ) : (
                       <Button
-                        variant='outline'
-                        className='w-full'
+                        variant={isPopular ? 'default' : 'outline'}
+                        className='h-10 w-full'
                         onClick={() => {
                           setSelectedPlan(p)
                           setPurchaseOpen(true)
