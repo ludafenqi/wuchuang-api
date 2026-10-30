@@ -417,13 +417,18 @@ func TestModelPricingIssuesDatabaseMatrix(t *testing.T) {
 			t.Cleanup(func() { _ = sqlDB.Close() })
 			previousDB := DB
 			previousAliasView := taskAliasViewPtr.Load()
+			previousDatabaseType := common.MainDatabaseType()
 			saved := config.GlobalConfig.ExportAllConfigs()
 			t.Cleanup(func() {
 				DB = previousDB
 				taskAliasViewPtr.Store(previousAliasView)
+				common.SetMainDatabaseType(previousDatabaseType)
+				initCol()
 				require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
 			})
 			DB = db
+			common.SetMainDatabaseType(common.DatabaseType(engine))
+			initCol()
 			require.NoError(t, db.AutoMigrate(&Option{}, &TaskPlugin{}, &Channel{}))
 			rebuildTaskAliasView()
 			var version string
