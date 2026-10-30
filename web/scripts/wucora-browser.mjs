@@ -299,7 +299,7 @@ try {
           .getByRole('menuitem', { name: 'Sign out', exact: true })
           .click()
         await page
-          .getByRole('dialog')
+          .getByRole('alertdialog')
           .getByRole('button', { name: 'Sign out', exact: true })
           .click()
         await page.waitForURL('**/sign-in**')
