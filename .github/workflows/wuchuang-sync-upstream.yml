@@ -50,6 +50,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Test upstream review PR creation and refresh
+        run: node --test .github/scripts/upstream-review.test.mjs
+
       - name: Prepare a merge candidate, fail closed on conflicts
         id: prepare
         if: github.event_name != 'pull_request'
@@ -91,8 +94,9 @@ jobs:
           echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo "Merged candidate commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
-      # Tests happen BEFORE branch push/PR creation, because GitHub does not
-      # trigger ordinary pull_request workflows from a PR opened with GITHUB_TOKEN.
+      # Validate BEFORE pushing: GITHUB_TOKEN pull_request opened/synchronize/
+      # reopened runs require approval; they are not automatically running checks.
+      # https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/trigger-a-workflow
       - name: Set up Go
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -165,7 +169,7 @@ jobs:
         if: always() && (github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: wucora-ui-review-${{ github.run_id }}
+          name: wucora-ui-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/wucora-ui-report/*.png
             ${{ runner.temp }}/wucora-ui-report/result.json
@@ -177,6 +181,7 @@ jobs:
         if: steps.prepare.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_SHA: ${{ steps.prepare.outputs.upstream }}
         shell: bash
         run: |
           set -euo pipefail
@@ -185,29 +190,4 @@ jobs:
           if git ls-remote --exit-code --heads origin refs/heads/automation/upstream-sync >/dev/null; then
             git fetch origin refs/heads/automation/upstream-sync:refs/remotes/origin/automation/upstream-sync
           fi
-          git push --force-with-lease origin HEAD:refs/heads/automation/upstream-sync
-
-          PR_NUMBER="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
-            --head automation/upstream-sync --base main --json number \
-            --jq '.[0].number // empty')"
-          if [ -z "$PR_NUMBER" ]; then
-            cat > "$RUNNER_TEMP/upstream-pr.md" <<EOF
-          ## 变更描述
-          AI-assisted automated merge of New API upstream commit ${{ steps.prepare.outputs.upstream }} into fork main. WuCora UI reference: b6f0b02864fe13cdd30dd8c443e1af1e53646c5b.
-
-          ## 运行证明
-          This run passed Go vet/build/tests in root, relaykit and tokenkit, frontend typecheck/tests/build, lint/format regression against the pinned upstream (full baseline findings remain in the artifact), and the real-gateway browser regression. Review the uploaded screenshots, upstream web changes and any newly added features before approving. Database changes require the real SQLite/MySQL/PostgreSQL matrix; this workflow alone does not certify migrations.
-
-          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
-
-          ## 审阅要求
-          Keep **Create a merge commit** history; do not squash. Human visual review and release approval remain pending. Merge to main only after all applicable checks pass; reuse the manual GHCR publish workflow and deploy a verified image digest after backup and recovery review.
-          EOF
-            gh pr create --repo "$GITHUB_REPOSITORY" \
-              --base main --head automation/upstream-sync \
-              --draft \
-              --title 'chore: review New API upstream updates' \
-              --body-file "$RUNNER_TEMP/upstream-pr.md"
-          else
-            echo "Updated existing PR #${PR_NUMBER}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          node .github/scripts/upstream-review.mjs
