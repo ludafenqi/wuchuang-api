@@ -25,6 +25,25 @@ jobs:
     timeout-minutes: 15
     env:
       GOWORK: 'off'
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_ROOT_PASSWORD: disposable-review-only
+          MYSQL_DATABASE: review
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pdisposable-review-only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_PASSWORD: disposable-review-only
+          POSTGRES_DB: review
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres -d review"
+          --health-interval=10s --health-timeout=5s --health-retries=12
 
     steps:
       - name: Checkout
@@ -74,6 +93,12 @@ jobs:
 
       - name: Test root, relaykit, and tokenkit modules
         run: make test
+
+      - name: Verify stored plugin pricing on three real databases
+        env:
+          PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+        run: go test ./model -run '^TestModelPricingIssuesDatabaseMatrix$' -count=1 -v
 
   frontend:
     name: Frontend and real-gateway UI regression

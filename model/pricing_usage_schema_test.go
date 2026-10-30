@@ -2,6 +2,8 @@ package model
 
 import (
 	"fmt"
+	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +15,12 @@ import (
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func pricingUsagePluginSource(version, usageSchema string) string {
@@ -309,4 +315,151 @@ func TestPricingSharedPluginVariantsUseEachSchemaAndExpression(t *testing.T) {
 	encoded, err := common.Marshal(single)
 	require.NoError(t, err)
 	assert.Contains(t, string(encoded), "billing_plugin_variants")
+}
+
+// Prices saved while a plugin fit stop fitting when it changes: a dropped model
+// leaves its provider price stale, and a new provider without the usage the
+// model expression reads cannot charge it. Unpriced models are listed too,
+// including those whose only expression prices ordinary channels.
+func TestModelPricingIssuesFollowPluginChanges(t *testing.T) {
+	require.NoError(t, DB.AutoMigrate(&Option{}))
+	saved := config.GlobalConfig.ExportAllConfigs()
+	t.Cleanup(func() {
+		require.NoError(t, DB.Where(commonKeyCol+" IN ?", modelPricingOptionKeys).Delete(&Option{}).Error)
+		require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+	})
+	pluginSource := func(key, name, version, models, usageSchema string) string {
+		source := strings.ReplaceAll(pricingUsagePluginSource(version, usageSchema), "pricing-usage-probe", key)
+		source = strings.Replace(source, "Pricing Usage Probe", name, 1)
+		return strings.Replace(source, `["pricing-usage-model"]`, models, 1)
+	}
+	savePricing := func(options map[string]string) {
+		for key, value := range options {
+			require.NoError(t, DB.Save(&Option{Key: key, Value: value}).Error)
+		}
+		require.NoError(t, config.GlobalConfig.LoadFromDB(options))
+	}
+	const seconds = `{seconds:{type:"number",unit:"second"}}`
+	_, err := jsplugin.DefaultRegistry.Register(pluginSource("issue-alpha", "Alpha", "1.0.0", `["issue-priced","issue-per-call","issue-unpriced","issue-ordinary","issue-shared","issue-dropped"]`, seconds), jsplugin.Options{})
+	require.NoError(t, err)
+	t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister("issue-alpha") })
+	savePricing(map[string]string{
+		"ModelPrice":                            `{"issue-per-call":0.3}`,
+		"billing_setting.billing_mode":          `{"issue-priced":"tiered_expr","issue-ordinary":"tiered_expr","issue-shared":"tiered_expr"}`,
+		"billing_setting.billing_expr":          `{"issue-priced":"u(\"seconds\") * 0.1","issue-ordinary":"tier(\"image\", fixed(0.02)) * image_count","issue-shared":"u(\"seconds\") * 0.2"}`,
+		billing_setting.PluginBillingExprOption: `{"issue-alpha::issue-dropped":"u(\"seconds\") * 0.5"}`,
+	})
+	unpriced := ModelPricingIssue{ModelName: "issue-unpriced", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueUnconfigured}
+	ordinary := ModelPricingIssue{ModelName: "issue-ordinary", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueUnconfigured}
+	// Other tests leave their plugins in the shared registry.
+	ownIssues := func() []ModelPricingIssue {
+		issues, err := GetModelPricingIssues("")
+		require.NoError(t, err)
+		return slices.DeleteFunc(issues, func(issue ModelPricingIssue) bool { return !strings.HasPrefix(issue.PluginKey, "issue-") })
+	}
+
+	assert.Equal(t, []ModelPricingIssue{ordinary, unpriced}, ownIssues())
+
+	_, err = jsplugin.DefaultRegistry.Register(pluginSource("issue-alpha", "Alpha", "1.1.0", `["issue-priced","issue-per-call","issue-unpriced","issue-ordinary","issue-shared"]`, seconds), jsplugin.Options{})
+	require.NoError(t, err)
+	_, err = jsplugin.DefaultRegistry.Register(pluginSource("issue-beta", "Beta", "1.0.0", `["issue-shared"]`, `{credits:{type:"number",unit:"credit"}}`), jsplugin.Options{})
+	require.NoError(t, err)
+	t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister("issue-beta") })
+	incompatible := ModelPricingIssue{ModelName: "issue-shared", PluginKey: "issue-beta", PluginName: "Beta", Reason: ModelPricingIssueIncompatible}
+
+	assert.Equal(t, []ModelPricingIssue{
+		{ModelName: "issue-dropped", PluginKey: "issue-alpha", PluginName: "Alpha", Reason: ModelPricingIssueStale},
+		ordinary,
+		incompatible,
+		unpriced,
+	}, ownIssues())
+	issues, err := GetModelPricingIssues("issue-beta")
+	require.NoError(t, err)
+	assert.Equal(t, []ModelPricingIssue{incompatible}, issues)
+
+	// A provider price that reads the provider's own usage replaces the model
+	// expression for that provider only.
+	savePricing(map[string]string{
+		billing_setting.PluginBillingExprOption: `{"issue-alpha::issue-dropped":"u(\"seconds\") * 0.5","issue-beta::issue-shared":"u(\"credits\") * 2"}`,
+	})
+	issues, err = GetModelPricingIssues("issue-beta")
+	require.NoError(t, err)
+	assert.Empty(t, issues)
+}
+
+// Disabled plugins keep prices for their installed active version, while a
+// removed model or an uninstalled provider needs attention on every database.
+func TestModelPricingIssuesDatabaseMatrix(t *testing.T) {
+	for _, engine := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(engine, func(t *testing.T) {
+			var dialect gorm.Dialector
+			switch engine {
+			case "sqlite":
+				dialect = sqlite.Open(":memory:")
+			case "mysql":
+				dsn := os.Getenv("PRICING_TEST_MYSQL_DSN")
+				if dsn == "" {
+					t.Skip("PRICING_TEST_MYSQL_DSN is not configured")
+				}
+				dialect = mysql.Open(dsn)
+			case "postgres":
+				dsn := os.Getenv("PRICING_TEST_POSTGRES_DSN")
+				if dsn == "" {
+					t.Skip("PRICING_TEST_POSTGRES_DSN is not configured")
+				}
+				dialect = postgres.Open(dsn)
+			}
+			db, err := gorm.Open(dialect, &gorm.Config{})
+			require.NoError(t, err)
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			sqlDB.SetMaxOpenConns(1)
+			t.Cleanup(func() { _ = sqlDB.Close() })
+			previousDB := DB
+			previousAliasView := taskAliasViewPtr.Load()
+			saved := config.GlobalConfig.ExportAllConfigs()
+			t.Cleanup(func() {
+				DB = previousDB
+				taskAliasViewPtr.Store(previousAliasView)
+				require.NoError(t, config.GlobalConfig.LoadFromDB(saved))
+			})
+			DB = db
+			require.NoError(t, db.AutoMigrate(&Option{}, &TaskPlugin{}, &Channel{}))
+			rebuildTaskAliasView()
+			var version string
+			if engine == "sqlite" {
+				require.NoError(t, db.Raw("select sqlite_version()").Scan(&version).Error)
+			} else {
+				require.NoError(t, db.Raw("select version()").Scan(&version).Error)
+			}
+			t.Logf("%s version: %s", engine, version)
+			const key = "pricing-stopped-matrix"
+			options := map[string]string{
+				billing_setting.PluginBillingExprOption: `{"pricing-stopped-matrix::pricing-usage-model":"u(\"seconds\")","pricing-stopped-matrix::removed-model":"u(\"seconds\")"}`,
+			}
+			for name, value := range options {
+				require.NoError(t, db.Save(&Option{Key: name, Value: value}).Error)
+			}
+			require.NoError(t, config.GlobalConfig.LoadFromDB(options))
+			row := TaskPlugin{Key: key, APIVersion: 1, Version: "1.0.0", Active: true, Enabled: false,
+				Source: LongText(strings.ReplaceAll(pricingUsagePluginSource("1.0.0", `{seconds:{type:"number",unit:"second"}}`), "pricing-usage-probe", key))}
+			require.NoError(t, db.Create(&row).Error)
+			t.Cleanup(func() {
+				require.NoError(t, db.Where(&TaskPlugin{Key: key}).Delete(&TaskPlugin{}).Error)
+				require.NoError(t, db.Where(&Option{Key: billing_setting.PluginBillingExprOption}).Delete(&Option{}).Error)
+			})
+			for range 2 {
+				issues, err := GetModelPricingIssues(key)
+				require.NoError(t, err)
+				assert.Equal(t, []ModelPricingIssue{{ModelName: "removed-model", PluginKey: key, PluginName: key, Reason: ModelPricingIssueStale}}, issues)
+			}
+			require.NoError(t, db.Delete(&row).Error)
+			issues, err := GetModelPricingIssues(key)
+			require.NoError(t, err)
+			assert.Equal(t, []ModelPricingIssue{
+				{ModelName: "pricing-usage-model", PluginKey: key, PluginName: key, Reason: ModelPricingIssueStale},
+				{ModelName: "removed-model", PluginKey: key, PluginName: key, Reason: ModelPricingIssueStale},
+			}, issues)
+		})
+	}
 }

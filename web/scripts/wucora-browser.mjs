@@ -290,6 +290,39 @@ try {
           scope: 'real local account, authenticated layout',
         })
       }
+      if (width === 1440 && theme === 'light') {
+        await page
+          .locator('header button')
+          .filter({ has: page.locator('[data-slot="avatar"]') })
+          .click()
+        await page
+          .getByRole('menuitem', { name: 'Sign out', exact: true })
+          .click()
+        await page
+          .getByRole('dialog')
+          .getByRole('button', { name: 'Sign out', exact: true })
+          .click()
+        await page.waitForURL('**/sign-in**')
+        assert.equal(await page.locator('.wcai-console').count(), 0)
+        const refresh = await context.request.post(
+          `${origin}/api/user/auth/refresh`
+        )
+        assert.equal(
+          refresh.status(),
+          401,
+          'Signed-out session must not refresh'
+        )
+        await page.goto(`${origin}/dashboard/overview`)
+        await page.waitForURL('**/sign-in**')
+        results.push({
+          route: '/sign-out',
+          theme,
+          width,
+          status: 'PASS',
+          scope:
+            'authenticated DOM removed; server session revoked; protected route denied',
+        })
+      }
       await context.close()
     }
   }
