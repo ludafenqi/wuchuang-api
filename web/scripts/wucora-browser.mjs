@@ -22,7 +22,7 @@ import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
 
-import { chromium } from 'playwright'
+import { chromium, request } from 'playwright'
 
 // Runs only against a new, disposable gateway. No remote services or real accounts.
 const root = path.resolve('..')
@@ -30,6 +30,7 @@ const output = path.resolve(
   process.env.UI_REPORT_DIR || '../.local-tests/ui-regression'
 )
 const assets = path.resolve(process.env.UI_ASSETS || 'dist')
+const logoutOnly = process.env.UI_LOGOUT_ONLY === '1'
 fs.mkdirSync(output, { recursive: true })
 const runtime = fs.mkdtempSync(path.join(output, 'runtime-'))
 const gateway = path.resolve(process.env.UI_GATEWAY || '../new-api')
@@ -188,8 +189,8 @@ try {
     .then((response) => response.json())
   assert.ok(channel.success, 'Create the uncontacted local catalog fixture')
   await seed.close()
-  for (const theme of ['light', 'dark']) {
-    for (const width of [1440, 390, 320]) {
+  for (const theme of logoutOnly ? ['light'] : ['light', 'dark']) {
+    for (const width of logoutOnly ? [1440] : [1440, 390, 320]) {
       const context = await browser.newContext({
         viewport: { width, height: 900 },
         colorScheme: theme,
@@ -208,7 +209,9 @@ try {
       page.on('pageerror', (error) =>
         errors.push({ theme, width, url: page.url(), message: error.message })
       )
-      for (const route of ['/', '/sign-in', '/sign-up', '/pricing', '/about']) {
+      for (const route of logoutOnly
+        ? []
+        : ['/', '/sign-in', '/sign-up', '/pricing', '/about']) {
         await page.goto(origin + route)
         await page.waitForLoadState('networkidle')
         await page.locator('#root').filter({ hasText: /\S/ }).waitFor()
@@ -258,12 +261,14 @@ try {
       const login = await context.request
         .post(`${origin}/api/user/login`, { data: credentials })
         .then((r) => r.json())
-      assert.ok(login.success, JSON.stringify(login))
-      for (const route of [
-        '/dashboard/overview',
-        '/models/metadata',
-        '/system-settings/site/footer',
-      ]) {
+      assert.ok(login.success, 'Fixture sign-in must succeed')
+      for (const route of logoutOnly
+        ? ['/dashboard/overview']
+        : [
+            '/dashboard/overview',
+            '/models/metadata',
+            '/system-settings/site/footer',
+          ]) {
         await page.goto(origin + route)
         await page.waitForLoadState('networkidle')
         assert.equal(new URL(page.url()).pathname, route.split('?')[0])
@@ -291,37 +296,118 @@ try {
         })
       }
       if (width === 1440 && theme === 'light') {
-        await page
-          .locator('header button')
-          .filter({ has: page.locator('[data-slot="avatar"]') })
-          .click()
-        await page
-          .getByRole('menuitem', { name: 'Sign out', exact: true })
-          .click()
-        await page
-          .getByRole('alertdialog')
-          .getByRole('button', { name: 'Sign out', exact: true })
-          .click()
-        await page.waitForURL('**/sign-in**')
-        assert.equal(await page.locator('.wcai-console').count(), 0)
-        const refresh = await context.request.post(
-          `${origin}/api/user/auth/refresh`
-        )
-        assert.equal(
-          refresh.status(),
-          401,
-          'Signed-out session must not refresh'
-        )
-        await page.goto(`${origin}/dashboard/overview`)
-        await page.waitForURL('**/sign-in**')
-        results.push({
-          route: '/sign-out',
-          theme,
-          width,
-          status: 'PASS',
-          scope:
-            'authenticated DOM removed; server session revoked; protected route denied',
-        })
+        let replay
+        let replayStage = 'browser-session-snapshot'
+        try {
+          // Capture the actual browser session after its latest bootstrap.
+          // Keep all credentials in memory, including on assertion failures.
+          const [response] = await Promise.all([
+            page.waitForResponse(
+              (response) =>
+                new URL(response.url()).pathname === '/api/user/auth/refresh' &&
+                response.request().method() === 'POST'
+            ),
+            page.reload(),
+          ])
+          assert.equal(response.status(), 200)
+          const bundle = (await response.json()).data
+          const sid = bundle?.session?.sid
+          assert.equal(typeof sid === 'string' && sid.length > 0, true)
+          const cookie = (
+            await context.cookies(`${origin}/api/user/auth/refresh`)
+          ).find((entry) => entry.name === 'new_api_refresh')
+          assert.equal(Boolean(cookie?.value), true)
+          replay = await request.newContext({
+            baseURL: origin,
+            userAgent: await page.evaluate(() => navigator.userAgent),
+            extraHTTPHeaders: {
+              Cookie: `${cookie.name}=${cookie.value}`,
+              'X-Auth-Session': sid,
+            },
+          })
+          // Exercise exactly the frozen cookie before logout. Refresh rotates
+          // it; give the new cookie back to the browser for its real UI logout.
+          replayStage = 'saved-refresh-valid-before-logout'
+          const validRefresh = await replay.post('/api/user/auth/refresh')
+          assert.equal(validRefresh.status(), 200)
+          const refreshed = await validRefresh.json()
+          assert.equal(refreshed.success, true)
+          assert.equal(refreshed.data?.session?.sid === sid, true)
+          assert.equal(
+            refreshed.data.access_expires_at > Date.now() / 1000 + 60,
+            true
+          )
+          await context.addCookies((await replay.storageState()).cookies)
+          const accessHeaders = {
+            Authorization: `Bearer ${refreshed.data.access_token}`,
+          }
+          replayStage = 'saved-access-valid-before-logout'
+          const validAccess = await replay.get('/api/option/', {
+            headers: accessHeaders,
+          })
+          assert.equal(validAccess.status(), 200)
+          assert.equal((await validAccess.json()).success, true)
+          replayStage = 'normal-ui-logout'
+          await page
+            .locator('header button')
+            .filter({ has: page.locator('[data-slot="avatar"]') })
+            .click()
+          await page
+            .getByRole('menuitem', { name: 'Sign out', exact: true })
+            .click()
+          await page
+            .getByRole('alertdialog')
+            .getByRole('button', { name: 'Sign out', exact: true })
+            .click()
+          await page.waitForURL('**/sign-in**')
+          assert.equal(await page.locator('.wcai-console').count(), 0)
+          // Probe access first: replaying a rotated refresh cookie must not
+          // itself revoke a still-active session and hide a broken logout.
+          replayStage = 'saved-access-rejected-after-logout'
+          const deniedAccess = await replay.get('/api/option/', {
+            headers: accessHeaders,
+          })
+          assert.equal(deniedAccess.status(), 401)
+          assert.equal((await deniedAccess.json()).code, 'AUTH_SESSION_REVOKED')
+          replayStage = 'saved-refresh-rejected-after-logout'
+          const deniedRefresh = await replay.post('/api/user/auth/refresh')
+          assert.equal(deniedRefresh.status(), 401)
+          assert.equal(
+            (await deniedRefresh.json()).code,
+            'AUTH_SESSION_REVOKED'
+          )
+          replayStage = 'protected-route-reentry'
+          await page.goto(`${origin}/dashboard/overview`)
+          await page.waitForURL('**/sign-in**')
+          results.push({
+            route: '/sign-out',
+            theme,
+            width,
+            status: 'PASS',
+            scope:
+              'credentials valid before logout; frozen access token and refresh cookie rejected as revoked after UI logout; authenticated DOM removed; protected route denied',
+            sessionReplay: {
+              sameSession: true,
+              beforeLogout: {
+                refresh: validRefresh.status(),
+                access: validAccess.status(),
+              },
+              afterLogout: {
+                access: deniedAccess.status(),
+                refresh: deniedRefresh.status(),
+                code: 'AUTH_SESSION_REVOKED',
+              },
+              accessCheckedBeforeRefreshReplay: true,
+            },
+          })
+        } catch {
+          // Playwright request errors can include headers in their call log.
+          throw new Error(
+            `Logout regression failed at ${replayStage}; credentials omitted`
+          )
+        } finally {
+          await replay?.dispose()
+        }
       }
       await context.close()
     }
@@ -342,6 +428,7 @@ try {
         root,
         assets,
         browser: process.env.UI_BROWSER || 'playwright Chromium',
+        check: logoutOnly ? 'logout' : 'full',
         sandbox: true,
         results,
         errors,
