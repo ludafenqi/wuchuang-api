@@ -31,30 +31,15 @@ import {
   type FooterLink,
 } from './config'
 
-export function OpenSourceAttribution(props: { showUpstreamLink?: boolean }) {
+export function OpenSourceAttribution() {
   const { t } = useTranslation()
   return (
-    <div className='text-muted-foreground flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs leading-relaxed'>
-      <p>Frontend design and development by New API contributors.</p>
-      <div className='flex flex-wrap gap-4'>
-        {props.showUpstreamLink !== false && (
-          <a
-            href='https://github.com/QuantumNous/new-api'
-            target='_blank'
-            rel='noopener noreferrer'
-            className='hover:text-foreground underline underline-offset-4'
-          >
-            New API
-          </a>
-        )}
-        <Link
-          to='/open-source'
-          className='hover:text-foreground underline underline-offset-4'
-        >
-          {t('Open-source notice')}
-        </Link>
-      </div>
-    </div>
+    <Link
+      to='/open-source'
+      className='hover:text-foreground ms-auto shrink-0 underline underline-offset-4'
+    >
+      {t('Open-source notice')}
+    </Link>
   )
 }
 
@@ -88,6 +73,8 @@ export type BrandFooterProps = {
   legacyHtml?: string
   availability?: FooterAvailability
   className?: string
+  showOpenSourceNotice?: boolean
+  presentation?: 'default' | 'landing'
 }
 
 export function BrandFooter(props: BrandFooterProps) {
@@ -102,7 +89,9 @@ export function BrandFooter(props: BrandFooterProps) {
   }, [])
   if (!props.config.enabled) return null
   const config = props.config
-  const links = visibleFooterLinks(config, props.availability ?? {})
+  const links = visibleFooterLinks(config, props.availability ?? {}).filter(
+    (link) => link.source !== 'open-source' && link.url !== '/open-source'
+  )
   const groups = [...new Set(links.map((link) => link.group))]
   const hasLegacy = !!props.legacyHtml && config.legacyMode !== 'ignore'
   const showBrand = !hasLegacy || config.legacyMode === 'append'
@@ -121,78 +110,78 @@ export function BrandFooter(props: BrandFooterProps) {
         props.className
       )}
       data-layout={config.layout}
+      data-presentation={props.presentation}
     >
       <div className='mx-auto max-w-6xl space-y-6 px-6 py-8 @xl:px-10 @xl:py-12'>
         {showBrand && (
-          <>
-            <div
-              className={cn(
-                'grid min-w-0 gap-8',
+          <div
+            className={cn(
+              'grid min-w-0 gap-8',
+              config.layout !== 'minimal' &&
+                '@2xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]',
+              props.presentation === 'landing' &&
                 config.layout !== 'minimal' &&
-                  '@2xl:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]'
-              )}
-            >
-              {config.layout !== 'minimal' && (
-                <div className='min-w-0 space-y-3'>
-                  <Link
-                    to='/'
-                    className='inline-flex max-w-full items-center gap-3'
-                  >
-                    <img
-                      src={logo}
-                      alt=''
-                      className='size-10 shrink-0 rounded-xl object-contain'
-                    />
-                    <span className='text-lg font-semibold break-words'>
-                      {props.name}
-                    </span>
-                  </Link>
-                  <p className='text-muted-foreground max-w-sm text-sm leading-relaxed break-words'>
-                    {t(config.description)}
-                  </p>
+                'wucora-footer-content'
+            )}
+          >
+            {config.layout !== 'minimal' && (
+              <div className='wucora-footer-brand min-w-0 space-y-3'>
+                <Link
+                  to='/'
+                  className='inline-flex max-w-full items-center gap-3'
+                >
+                  <img
+                    src={logo}
+                    alt=''
+                    className='size-10 shrink-0 rounded-xl object-contain'
+                  />
+                  <span className='text-lg font-semibold break-words'>
+                    {props.name}
+                  </span>
+                </Link>
+                <p className='text-muted-foreground max-w-sm text-sm leading-relaxed break-words'>
+                  {t(config.description)}
+                </p>
+              </div>
+            )}
+            <nav aria-label={t('Footer navigation')}>
+              {config.layout === 'developer' ||
+              (props.presentation === 'landing' &&
+                config.layout === 'brand') ? (
+                <div className='wucora-footer-columns grid grid-cols-2 gap-6 @xl:grid-cols-4'>
+                  {groups.map((group) => (
+                    <div key={group} className='min-w-0'>
+                      <h2 className='mb-3 text-sm font-semibold break-words'>
+                        {t(group || 'Links')}
+                      </h2>
+                      <ul className='space-y-3'>
+                        {links
+                          .filter((link) => link.group === group)
+                          .map((link) => (
+                            <li key={link.id}>
+                              <NavigationLink link={link} />
+                            </li>
+                          ))}
+                      </ul>
+                    </div>
+                  ))}
                 </div>
+              ) : (
+                <ul
+                  className={cn(
+                    'flex flex-wrap gap-x-6 gap-y-3',
+                    config.layout === 'brand' && '@2xl:justify-end'
+                  )}
+                >
+                  {links.map((link) => (
+                    <li key={link.id} className='max-w-full min-w-0'>
+                      <NavigationLink link={link} />
+                    </li>
+                  ))}
+                </ul>
               )}
-              <nav aria-label={t('Footer navigation')}>
-                {config.layout === 'developer' ? (
-                  <div className='grid grid-cols-2 gap-6 @xl:grid-cols-4'>
-                    {groups.map((group) => (
-                      <div key={group} className='min-w-0'>
-                        <h2 className='mb-3 text-sm font-semibold break-words'>
-                          {t(group || 'Links')}
-                        </h2>
-                        <ul className='space-y-3'>
-                          {links
-                            .filter((link) => link.group === group)
-                            .map((link) => (
-                              <li key={link.id}>
-                                <NavigationLink link={link} />
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <ul
-                    className={cn(
-                      'flex flex-wrap gap-x-6 gap-y-3',
-                      config.layout === 'brand' && '@2xl:justify-end'
-                    )}
-                  >
-                    {links.map((link) => (
-                      <li key={link.id} className='max-w-full min-w-0'>
-                        <NavigationLink link={link} />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </nav>
-            </div>
-            <p className='text-muted-foreground text-sm leading-relaxed break-words'>
-              © {config.autoYear ? currentYear : config.year} {props.name}.{' '}
-              {t(config.copyright)}
-            </p>
-          </>
+            </nav>
+          </div>
         )}
         {hasLegacy && (
           <HtmlContent
@@ -201,7 +190,23 @@ export function BrandFooter(props: BrandFooterProps) {
             className='custom-footer min-w-0 overflow-hidden [contain:paint]'
           />
         )}
-        <OpenSourceAttribution showUpstreamLink={false} />
+        {(showBrand || props.showOpenSourceNotice) && (
+          <div
+            data-slot='footer-copyright-row'
+            className={cn(
+              'text-muted-foreground flex min-w-0 flex-wrap items-center justify-between gap-x-6 gap-y-2 text-sm leading-relaxed sm:flex-nowrap',
+              props.showOpenSourceNotice && 'border-t pt-5'
+            )}
+          >
+            {showBrand && (
+              <p className='max-w-full min-w-0 [overflow-wrap:anywhere] sm:flex-1'>
+                © {config.autoYear ? currentYear : config.year} {props.name}.{' '}
+                {t(config.copyright)}
+              </p>
+            )}
+            {props.showOpenSourceNotice && <OpenSourceAttribution />}
+          </div>
+        )}
       </div>
     </footer>
   )

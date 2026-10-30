@@ -29,7 +29,8 @@ export const FooterNoticeContext = createContext<{
   setPresent: Dispatch<SetStateAction<boolean>>
 } | null>(null)
 
-// Only the actual site footer registers; the administrator's preview does not.
+// The provider belongs to HomeFooter. Other layouts and administrator previews
+// do not opt into the home-only notice.
 export function useSiteFooterNotice(present: boolean) {
   const setPresent = useContext(FooterNoticeContext)?.setPresent
   useEffect(() => {

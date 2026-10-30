@@ -65,6 +65,62 @@ function renderManagement(overrides: Partial<SiteSettings> = {}) {
 }
 
 describe('visual footer management', () => {
+  it('saves a multiline home notice with editable links and restores it when the settings reopen', async () => {
+    const user = userEvent.setup()
+    const put = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const view = renderManagement()
+    const content = 'Operator credits\n\n[Source](https://example.com/source)'
+    await user.click(screen.getByLabelText('Home open-source notice'))
+    await user.paste(content)
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledExactlyOnceWith('/api/option/footer', {
+        SystemName: settings.SystemName,
+        FooterConfig: JSON.stringify({
+          ...defaultFooterConfig(),
+          openSourceNotice: content,
+        }),
+      })
+    )
+    const stored = (put.mock.calls[0][1] as { FooterConfig: string })
+      .FooterConfig
+    view.unmount()
+    renderManagement({ FooterConfig: stored })
+    expect(screen.getByLabelText('Home open-source notice')).toHaveValue(
+      content
+    )
+  })
+
+  it('keeps a notice draft after save failure and preserves it when resetting visual defaults', async () => {
+    const user = userEvent.setup()
+    const put = vi.spyOn(api, 'put').mockResolvedValue({
+      data: { success: false, message: 'Storage unavailable' },
+    })
+    renderManagement({
+      FooterConfig: JSON.stringify({
+        ...defaultFooterConfig(),
+        openSourceNotice: 'Existing credits',
+      }),
+    })
+    await user.clear(screen.getByLabelText('Home open-source notice'))
+    await user.type(
+      screen.getByLabelText('Home open-source notice'),
+      'New credits'
+    )
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    expect(screen.getByLabelText('Home open-source notice')).toHaveValue(
+      'New credits'
+    )
+    await user.click(screen.getByRole('button', { name: 'Restore defaults' }))
+    await user.click(screen.getByRole('button', { name: 'Continue' }))
+    expect(screen.getByLabelText('Home open-source notice')).toHaveValue(
+      'New credits'
+    )
+  })
+
   it('submits the name and footer as one operation and keeps both draft fields after failure', async () => {
     const user = userEvent.setup()
     const put = vi.spyOn(api, 'put').mockResolvedValue({

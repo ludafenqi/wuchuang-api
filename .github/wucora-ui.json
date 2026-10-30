@@ -1,0 +1,7 @@
+{
+  "uiReference": "b6f0b02864fe13cdd30dd8c443e1af1e53646c5b",
+  "referenceRun": "https://github.com/ludafenqi/wuchuang-api/actions/runs/40269309184",
+  "referenceImage": "ghcr.io/ludafenqi/wuchuang-api@sha256:9fa0f6beb46eb4260bd04b8b97e77ec7af1c9ab42a76ec0d58ffe7d1f78589e5",
+  "integratedUpstream": "a2defd2a8256abe039e5295bd583aeb2d02f111f",
+  "reviewRequired": true
+}

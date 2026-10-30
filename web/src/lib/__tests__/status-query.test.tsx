@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 
 import { useStatus } from '@/hooks/use-status'
 import { api } from '@/lib/api'
+import { applySystemBrandingToDom } from '@/lib/dom-utils'
 import {
   getModuleAccessForGuard,
   type HeaderNavModule,
@@ -30,6 +31,7 @@ import {
 import {
   STATUS_QUERY_KEY,
   ensureStatus,
+  mapStatusDataToConfig,
   statusQueryOptions,
 } from '@/lib/status-query'
 import { useSystemConfigStore } from '@/stores/system-config-store'
@@ -87,6 +89,61 @@ afterEach(() => {
   apiClient.get = originalGet
   window.localStorage.clear()
   useSystemConfigStore.setState(useSystemConfigStore.getInitialState(), true)
+})
+
+describe('site branding configuration', () => {
+  test('updates the browser title and favicon when configured branding changes', () => {
+    applySystemBrandingToDom({ systemName: 'WuCora', logo: '/wucora-logo.png' })
+    expect(document.title).toBe('WuCora')
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/wucora-logo.png'
+    )
+    applySystemBrandingToDom({ systemName: 'Custom site', logo: '/custom.png' })
+    expect(document.title).toBe('Custom site')
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/custom.png'
+    )
+  })
+
+  test.each([
+    {},
+    { system_name: '', logo: '' },
+    { system_name: '  ', logo: '  ' },
+  ])(
+    'uses WuCora when the status response omits configured branding',
+    (status) => {
+      expect(mapStatusDataToConfig(status)).toMatchObject({
+        systemName: 'WuCora',
+        logo: '/wucora-logo.png',
+      })
+    }
+  )
+
+  test('initializes the site brand before status is fetched', () => {
+    expect(useSystemConfigStore.getState().config).toMatchObject({
+      systemName: 'WuCora',
+      logo: '/wucora-logo.png',
+    })
+  })
+
+  test.each(['Custom site', 'New API'])(
+    'keeps an explicitly configured %s name and logo',
+    (name) => {
+      expect(
+        mapStatusDataToConfig({
+          system_name: name,
+          logo: 'https://example.test/custom-logo.png',
+          footer_html: '<p>Custom footer</p>',
+        })
+      ).toMatchObject({
+        systemName: name,
+        logo: 'https://example.test/custom-logo.png',
+        footerHtml: '<p>Custom footer</p>',
+      })
+    }
+  )
 })
 
 describe('shared status query deduplication', () => {

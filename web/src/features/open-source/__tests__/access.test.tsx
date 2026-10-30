@@ -30,13 +30,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { Footer } from '@/components/layout/components/footer'
 import { defaultFooterConfig } from '@/features/footer/config'
+import { HomeFooter } from '@/features/home/components/home-footer'
 import { api } from '@/lib/api'
+import { redirectToHomeNotice } from '@/routes/open-source'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
-import { FooterNoticeProvider, OpenSourceAccess } from '../access'
-
 describe('supplementary open-source access', () => {
-  it('uses the normal footer, restores access when hidden, and cleans up on navigation', async () => {
+  it('keeps the home notice when its footer is disabled and removes it on navigation', async () => {
     const original = useSystemConfigStore.getState().config
     vi.spyOn(api, 'get').mockResolvedValue({
       data: {
@@ -59,29 +59,29 @@ describe('supplementary open-source access', () => {
       }),
     })
     const root = createRootRoute({
-      component: () => (
-        <FooterNoticeProvider>
-          <Outlet />
-          <OpenSourceAccess />
-        </FooterNoticeProvider>
-      ),
+      component: Outlet,
     })
     const router = createRouter({
       routeTree: root.addChildren([
         createRoute({
           getParentRoute: () => root,
           path: '/',
-          component: Footer,
+          component: HomeFooter,
         }),
         createRoute({
           getParentRoute: () => root,
           path: '/about',
-          component: () => <main>About content</main>,
+          component: () => (
+            <main>
+              About content
+              <Footer />
+            </main>
+          ),
         }),
         createRoute({
           getParentRoute: () => root,
           path: '/open-source',
-          component: () => <main>Required open-source notice</main>,
+          beforeLoad: redirectToHomeNotice,
         }),
       ]),
       history: createMemoryHistory({ initialEntries: ['/'] }),
@@ -118,12 +118,16 @@ describe('supplementary open-source access', () => {
       expect(getComputedStyle(legal).position).not.toBe('fixed')
       expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument()
       await act(() => router.navigate({ to: '/about' }))
+      expect(await screen.findByText('About content')).toBeVisible()
       expect(
-        await screen.findByRole('complementary', { name: 'Legal' })
-      ).toBeVisible()
+        screen.queryByRole('complementary', { name: 'Legal' })
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('link', { name: 'Open-source notice' })
+      ).not.toBeInTheDocument()
       await act(() => router.navigate({ to: '/open-source' }))
       expect(
-        await screen.findByText('Required open-source notice')
+        await screen.findByRole('dialog', { name: 'Open-source notice' })
       ).toBeVisible()
       expect(
         screen.queryByRole('complementary', { name: 'Legal' })

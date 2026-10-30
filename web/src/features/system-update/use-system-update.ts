@@ -28,6 +28,7 @@ import { useEffect, useSyncExternalStore } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useStatus } from '@/hooks/use-status'
+import { getBuildVersion } from '@/lib/build-version'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
 import { statusQueryOptions } from '@/lib/status-query'
@@ -154,6 +155,7 @@ export function useSystemUpdate() {
       ? undefined
       : version || undefined
   const release = query.data?.release ?? null
+  const build = getBuildVersion(status)
   const comparison = compareSystemVersions(currentVersion, release?.tag_name)
   const hasUpdate = comparison === -1
   const isIgnored = useSyncExternalStore(subscribeSystemUpdatePreferences, () =>
@@ -183,6 +185,8 @@ export function useSystemUpdate() {
 
   return {
     currentVersion,
+    displayVersion: build.label,
+    sourceRevision: build.revision,
     release,
     comparison,
     hasUpdate,

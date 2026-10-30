@@ -292,9 +292,9 @@ describe('model cards', () => {
       within(endpointField).getByText('openai-response, openai')
     ).toHaveAttribute('title', endpoints.join(', '))
     expect(within(endpointField).getByText('+3')).toBeVisible()
-    expect(
-      within(tagField).getByText('video-generation, high-resolution')
-    ).toHaveAttribute('title', tags.join(', '))
+    for (const tag of tags.slice(0, 2)) {
+      expect(within(tagField).getByText(tag)).toHaveAttribute('title', tag)
+    }
     expect(within(tagField).getByText('+4')).toBeVisible()
     expect(
       within(screen.getByRole('group', { name: 'Pricing' })).getByText(

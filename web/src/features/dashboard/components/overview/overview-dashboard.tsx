@@ -230,7 +230,7 @@ function StartStepItem(props: {
   const StatusIcon = props.step.completed ? Check : Circle
 
   return (
-    <li className='relative flex gap-3 pb-2.5 last:pb-0'>
+    <li className='wcai-setup-step relative flex min-w-0 gap-3 pb-2.5 last:pb-0'>
       {!props.isLast && (
         <span
           className='bg-border absolute top-9 bottom-0 left-4 w-px'
@@ -630,6 +630,9 @@ export function OverviewDashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t('Overview')}</SectionPageLayout.Title>
+      <SectionPageLayout.Description>
+        {t('A focused home for keys, balance, routing, and service health.')}
+      </SectionPageLayout.Description>
       <SectionPageLayout.Actions>
         {setupStatusReady && setupComplete && (
           <Button
@@ -644,16 +647,37 @@ export function OverviewDashboard() {
             {t('Setup guide')}
           </Button>
         )}
+        <Button
+          variant='outline'
+          render={
+            <Link to='/dashboard/$section' params={{ section: 'models' }} />
+          }
+        >
+          {t('Model Call Analytics')}
+        </Button>
+        <Button render={<Link to='/keys' />}>
+          <KeyRound aria-hidden='true' />
+          {t('Create API Key')}
+        </Button>
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='flex flex-col gap-4'>
+        <div className='wcai-overview mx-auto flex w-full max-w-[100rem] flex-col gap-6 sm:gap-8'>
+          <SummaryCards />
+          <nav
+            aria-label={t('Recommended actions')}
+            className='wcai-action-ribbon grid grid-cols-1 gap-0 sm:grid-cols-2 xl:grid-cols-4'
+          >
+            {visibleQuickActions.map((action) => (
+              <QuickActionItem key={action.title} action={action} />
+            ))}
+          </nav>
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
-              <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
-                  <div className='relative h-full overflow-hidden p-4 sm:p-5'>
+              <CardStaggerContainer className='grid items-stretch gap-4'>
+                <CardStaggerItem className='wcai-setup-card bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
+                  <div className='relative h-full overflow-hidden p-5 sm:p-7'>
                     <SetupGuideBackdrop />
-                    <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
+                    <div className='relative grid min-w-0 items-start gap-6 @5xl/content:grid-cols-[minmax(0,1fr)_16rem]'>
                       <div className='flex min-w-0 flex-col gap-5'>
                         <div className='flex flex-wrap items-start justify-between gap-3'>
                           <div className='flex max-w-2xl flex-col gap-1'>
@@ -664,7 +688,7 @@ export function OverviewDashboard() {
                               />
                               {t('Get started')}
                             </div>
-                            <h3 className='text-xl font-semibold tracking-tight sm:text-2xl'>
+                            <h3 className='text-2xl font-semibold tracking-tight sm:text-3xl'>
                               {t('Build on your API gateway in minutes')}
                             </h3>
                             <p className='text-muted-foreground max-w-xl text-sm leading-relaxed'>
@@ -691,7 +715,7 @@ export function OverviewDashboard() {
                           </div>
                         </div>
 
-                        <ol className='bg-background/45 rounded-2xl border p-2 backdrop-blur'>
+                        <ol className='wcai-setup-steps grid gap-3'>
                           {startSteps.map((step, index) => (
                             <StartStepItem
                               key={step.title}
@@ -707,24 +731,6 @@ export function OverviewDashboard() {
                         example={requestExample}
                         signals={heroSignals}
                       />
-                    </div>
-                  </div>
-                </CardStaggerItem>
-
-                <CardStaggerItem className='bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
-                  <div className='flex h-full flex-col gap-4'>
-                    <div className='flex flex-col gap-1'>
-                      <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-                        {t('Recommended actions')}
-                      </div>
-                      <h3 className='text-lg font-semibold tracking-tight'>
-                        {t('Keep the platform ready')}
-                      </h3>
-                    </div>
-                    <div className='grid gap-2'>
-                      {visibleQuickActions.map((action) => (
-                        <QuickActionItem key={action.title} action={action} />
-                      ))}
                     </div>
                   </div>
                 </CardStaggerItem>
@@ -786,8 +792,6 @@ export function OverviewDashboard() {
               </CardStaggerItem>
             </CardStaggerContainer>
           )}
-
-          <SummaryCards />
 
           {showContentPanels && (
             <CardStaggerContainer

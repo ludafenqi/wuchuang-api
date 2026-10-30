@@ -25,42 +25,62 @@ import {
   Outlet,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
-import type { ReactNode } from 'react'
+import { render, screen, within, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
+import { defaultFooterConfig } from '@/features/footer/config'
+import { HomeFooter } from '@/features/home/components/home-footer'
 import { api } from '@/lib/api'
 import { Route as AboutRoute } from '@/routes/about'
-import { Route as NoticeRoute } from '@/routes/open-source'
-
-import { FooterNoticeProvider, OpenSourceAccess } from '../access'
-
-vi.mock('@/components/layout', () => ({
-  PublicLayout: (props: { children: ReactNode }) => (
-    <main>{props.children}</main>
-  ),
-}))
+import { redirectToHomeNotice } from '@/routes/open-source'
 
 describe('public about and open-source routes', () => {
-  it.each(['/about', '/open-source'])(
-    'keeps %s accessible independently of administrator content',
-    async (path) => {
+  it.each([
+    ['/about', 'Original About content'],
+    ['/about', ''],
+    ['/open-source', 'Original About content'],
+    ['/open-source/', 'Original About content'],
+  ])(
+    'keeps %s accessible with About content "%s" and reads the home notice from configuration',
+    async (path, aboutContent) => {
       vi.stubEnv(
         'VITE_SOURCE_REVISION',
         '0123456789abcdef0123456789abcdef01234567'
       )
-      vi.spyOn(api, 'get').mockResolvedValue({
-        data: { success: true, data: 'Original About content' },
-      })
+      localStorage.clear()
+      vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+      vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+        data: {
+          success: true,
+          data:
+            url === '/api/status'
+              ? {
+                  demo_site_enabled: false,
+                  footer_config: JSON.stringify({
+                    ...defaultFooterConfig(),
+                    openSourceNotice: [
+                      'Frontend design and development by New API contributors.',
+                      '[New API](https://github.com/QuantumNous/new-api)',
+                      '[Corresponding source code](https://github.com/ludafenqi/wuchuang-api/tree/0123456789abcdef0123456789abcdef01234567)',
+                      '[AGPLv3 · LICENSE](https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/LICENSE)',
+                      '[NOTICE](https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/NOTICE)',
+                      '[THIRD-PARTY-LICENSES.md](https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/THIRD-PARTY-LICENSES.md)',
+                    ].join('\n\n'),
+                  }),
+                }
+              : aboutContent,
+        },
+      }))
       const root = createRootRoute({
-        component: () => (
-          <FooterNoticeProvider>
-            <Outlet />
-            <OpenSourceAccess />
-          </FooterNoticeProvider>
-        ),
+        component: Outlet,
       })
       const routeTree = root.addChildren([
+        createRoute({
+          getParentRoute: () => root,
+          path: '/',
+          component: HomeFooter,
+        }),
         createRoute({
           getParentRoute: () => root,
           path: '/about',
@@ -69,7 +89,7 @@ describe('public about and open-source routes', () => {
         createRoute({
           getParentRoute: () => root,
           path: '/open-source',
-          component: NoticeRoute.options.component,
+          beforeLoad: redirectToHomeNotice,
         }),
       ])
       const router = createRouter({
@@ -86,53 +106,74 @@ describe('public about and open-source routes', () => {
         </QueryClientProvider>
       )
       if (path === '/about') {
-        expect(await screen.findByText('Original About content')).toBeVisible()
-      } else {
         expect(
-          await screen.findByRole('heading', {
+          await screen.findByText(aboutContent || 'No About Content Set')
+        ).toBeVisible()
+        expect(
+          screen.queryByRole('link', { name: 'Open-source notice' })
+        ).not.toBeInTheDocument()
+        expect(
+          document.querySelector(
+            'a[href="https://github.com/QuantumNous/new-api"]'
+          )
+        ).not.toBeInTheDocument()
+        expect(
+          screen.queryByText(/New API Project Repository:/)
+        ).not.toBeInTheDocument()
+      } else {
+        expect(router.state.location.pathname).toBe('/')
+        expect(router.state.location.hash).toBe('open-source')
+        const dialog = await screen.findByRole('dialog', {
+          name: 'Open-source notice',
+        })
+        expect(
+          within(dialog).getByRole('heading', {
             name: 'Open-source notice',
-            level: 1,
           })
         ).toBeVisible()
         expect(
-          screen.getByText(
+          await within(dialog).findByText(
             'Frontend design and development by New API contributors.'
           )
         ).toBeVisible()
-        expect(screen.getByRole('link', { name: 'New API' })).toHaveAttribute(
-          'href',
-          'https://github.com/QuantumNous/new-api'
-        )
         expect(
-          screen.getByRole('link', { name: 'Corresponding source code' })
+          within(dialog).getByRole('link', { name: 'New API' })
+        ).toHaveAttribute('href', 'https://github.com/QuantumNous/new-api')
+        expect(
+          within(dialog).getByRole('link', {
+            name: 'Corresponding source code',
+          })
         ).toHaveAttribute(
           'href',
           'https://github.com/ludafenqi/wuchuang-api/tree/0123456789abcdef0123456789abcdef01234567'
         )
         expect(
-          screen.getByRole('link', { name: 'AGPLv3 · LICENSE' })
+          within(dialog).getByRole('link', { name: 'AGPLv3 · LICENSE' })
         ).toHaveAttribute(
           'href',
           'https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/LICENSE'
         )
-        expect(screen.getByRole('link', { name: 'NOTICE' })).toHaveAttribute(
+        expect(
+          within(dialog).getByRole('link', { name: 'NOTICE' })
+        ).toHaveAttribute(
           'href',
           'https://github.com/ludafenqi/wuchuang-api/blob/0123456789abcdef0123456789abcdef01234567/NOTICE'
         )
         expect(
-          screen.getByRole('link', { name: 'THIRD-PARTY-LICENSES.md' })
+          within(dialog).getByRole('link', { name: 'THIRD-PARTY-LICENSES.md' })
         ).toBeVisible()
+        await userEvent.setup().keyboard('{Escape}')
+        await waitFor(() =>
+          expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+        )
+        expect(router.state.location.pathname).toBe('/')
+        expect(router.state.location.hash).toBe('')
       }
-      if (path === '/about') {
-        expect(
-          screen.getByRole('complementary', { name: 'Legal' })
-        ).toBeVisible()
-      } else {
-        expect(
-          screen.queryByRole('complementary', { name: 'Legal' })
-        ).not.toBeInTheDocument()
-      }
+      expect(
+        screen.queryByRole('complementary', { name: 'Legal' })
+      ).not.toBeInTheDocument()
       client.clear()
+      localStorage.clear()
       vi.unstubAllEnvs()
     }
   )

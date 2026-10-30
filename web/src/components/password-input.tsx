@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { Eye, EyeOff } from 'lucide-react'
 import * as React from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
@@ -37,12 +38,14 @@ export function PasswordInput({
   ref,
   ...props
 }: PasswordInputProps) {
+  const { t } = useTranslation()
   const [showPassword, setShowPassword] = React.useState(false)
 
   return (
     <div className={cn('relative rounded-md', className)}>
       <Input
         type={showPassword ? 'text' : 'password'}
+        className='pe-10'
         ref={ref}
         disabled={disabled}
         {...props}
@@ -52,9 +55,9 @@ export function PasswordInput({
         size='icon'
         variant='ghost'
         disabled={disabled}
-        className='text-muted-foreground absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md'
+        className='text-muted-foreground absolute end-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md active:not-aria-[haspopup]:-translate-y-1/2'
         onClick={() => setShowPassword((prev) => !prev)}
-        aria-label='Toggle password visibility'
+        aria-label={showPassword ? t('Hide password') : t('Show password')}
       >
         {showPassword ? (
           <Eye size={18} aria-hidden='true' />

@@ -49,7 +49,7 @@ const headerExtensions = new Set([
   '.tsx',
 ])
 const protectedHeaderPattern =
-  /^\/\*\nCopyright \(C\)[\s\S]*?QuantumNous[\s\S]*?\*\/\n+/
+  /^\/\*\r?\nCopyright \(C\)[\s\S]*?QuantumNous[\s\S]*?\*\/(?:\r?\n)+/
 
 function extensionOf(path) {
   const index = path.lastIndexOf('.')

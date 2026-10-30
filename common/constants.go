@@ -12,9 +12,13 @@ import (
 
 var StartTime = time.Now().Unix() // unit: second
 var Version = "v0.0.0"            // this hard coding will be replaced automatically when building, no need to manually change
-var SystemName = "New API"
+// Upstream project identity is distinct from the configurable site brand.
+const UpstreamSystemName = "New API"
+
+var SourceRevision string // actual source commit, injected by the image build
+var SystemName = "WuCora"
 var Footer = ""
-var Logo = ""
+var Logo = "/wucora-logo.png"
 var TopUpLink = ""
 
 // var ChatLink = ""

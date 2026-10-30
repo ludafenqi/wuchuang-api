@@ -1,6 +1,10 @@
 name: CI
 
 on:
+  # This review branch can run Linux checks without opening a PR or publishing.
+  push:
+    branches: [codex/wucora-maintained-ui]
+  workflow_dispatch:
   pull_request:
     types: [opened, synchronize, closed]
 
@@ -26,8 +30,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: ${{ github.event.pull_request.base.repo.full_name }}
+          repository: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
           ref: ${{ github.sha }}
+
+      - name: Test upstream review PR creation and refresh
+        run: node --test .github/scripts/upstream-review.test.mjs
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -69,10 +76,10 @@ jobs:
         run: make test
 
   frontend:
-    name: Frontend typecheck and test
+    name: Frontend and real-gateway UI regression
     if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: web
@@ -81,19 +88,58 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          repository: ${{ github.event.pull_request.base.repo.full_name }}
+          repository: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
           ref: ${{ github.sha }}
+          fetch-depth: 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: '1.4.0'
+          bun-version: '1.4.4'
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
       - name: Typecheck
-        run: bun run typecheck
+        run: bun check -b
 
       - name: Test
         run: bun run test
+
+      - name: Check UI quality against the pinned upstream and build
+        run: |
+          set -euo pipefail
+          TARGET="$(node -p 'JSON.parse(require("fs").readFileSync("../.github/wucora-ui.json")).integratedUpstream')"
+          UI_QUALITY_DIR="$RUNNER_TEMP/wucora-review/quality" bun scripts/wucora-quality.mjs "$TARGET"
+          bun run build
+
+      - name: Set up Go for the disposable UI gateway
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+
+      - name: Verify real gateway pages without publishing
+        working-directory: .
+        env:
+          GOWORK: 'off'
+          UI_BROWSER: /opt/google/chrome/chrome
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/wucora-review-gateway" .
+          cd web
+          # Ubuntu's packaged Chrome has the AppArmor user-namespace allowance.
+          # Keep chromiumSandbox enabled; never change runner-wide restrictions.
+          "$UI_BROWSER" --version
+          bun x playwright install-deps chromium
+          UI_GATEWAY="$RUNNER_TEMP/wucora-review-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-review" bun scripts/wucora-browser.mjs
+
+      - name: Preserve UI review evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-review-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/wucora-review/*.png
+            ${{ runner.temp }}/wucora-review/result.json
+            ${{ runner.temp }}/wucora-review/quality/
+          if-no-files-found: warn

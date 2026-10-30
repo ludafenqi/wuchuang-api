@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next'
 
 import { SystemUpdateAction } from '@/features/system-update/system-update-action'
 import { useStatus } from '@/hooks/use-status'
+import { getBuildVersion } from '@/lib/build-version'
 import { formatTimestamp } from '@/lib/format'
 
 import { SettingsSection } from '../components/settings-section'
@@ -35,7 +36,11 @@ export function UpdateCheckerSection(props: UpdateCheckerSectionProps) {
   const uptime = props.startTime
     ? formatTimestamp(props.startTime)
     : t('Unknown')
-  const version = status?.version || props.currentVersion || t('Unknown')
+  const version =
+    getBuildVersion({
+      version: status?.version || props.currentVersion,
+      source_revision: status?.source_revision,
+    }).label || t('Unknown')
 
   return (
     <SettingsSection title={t('System maintenance')}>

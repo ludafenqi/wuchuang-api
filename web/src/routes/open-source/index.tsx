@@ -16,10 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { OpenSourceNotice } from '@/features/open-source'
+export function redirectToHomeNotice() {
+  throw redirect({ to: '/', hash: 'open-source' })
+}
 
 export const Route = createFileRoute('/open-source/')({
-  component: OpenSourceNotice,
+  beforeLoad: redirectToHomeNotice,
 })

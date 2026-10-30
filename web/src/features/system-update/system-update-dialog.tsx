@@ -127,7 +127,7 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
         <div className='min-w-0'>
           <dt className='text-muted-foreground'>{t('Current version')}</dt>
           <dd className='font-medium break-all'>
-            {update.currentVersion || t('Unknown version')}
+            {update.displayVersion || t('Unknown version')}
           </dd>
         </div>
         <div className='min-w-0'>
@@ -139,6 +139,14 @@ export function SystemUpdateDialog(props: SystemUpdateDialogProps) {
             )}
           </dd>
         </div>
+        {update.sourceRevision && (
+          <div className='min-w-0 sm:col-span-2'>
+            <dt className='text-muted-foreground'>{t('Git commit')}</dt>
+            <dd className='mt-1 font-mono text-xs break-all'>
+              {update.sourceRevision}
+            </dd>
+          </div>
+        )}
         {release?.published_at && (
           <div>
             <dt className='text-muted-foreground'>{t('Published at')}</dt>
