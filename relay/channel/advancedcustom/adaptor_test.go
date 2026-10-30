@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -64,17 +65,37 @@ func TestAdaptorMasksDialedHostsInDialFailure(t *testing.T) {
 	defer upstream.Close()
 	upstreamURL, err := url.Parse(upstream.URL)
 	require.NoError(t, err)
+	// A local proxy produces a deterministic error naming its own host. An
+	// unresolvable public hostname depends on DNS/proxy software and may return
+	// EOF without the host, which never exercises the masking contract.
+	proxyRequests := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyRequests <- r.Method
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			return
+		}
+		conn, buffer, err := hijacker.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = buffer.WriteString("HTTP/1.1 502 127.0.0.1\r\nContent-Length: 0\r\n\r\n")
+		_ = buffer.Flush()
+	}))
+	defer proxy.Close()
 	for _, tc := range []struct {
 		name   string
 		proxy  string
 		hidden string
+		target string
 	}{
-		{name: "absolute route host", hidden: "localhost"},
-		{name: "channel proxy host", proxy: "http://egress.private.invalid:8080", hidden: "egress.private.invalid"},
+		{name: "absolute route host", hidden: "localhost", target: "localhost"},
+		{name: "channel proxy host", proxy: proxy.URL, hidden: "127.0.0.1", target: "localhost"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
-				Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/realtime", UpstreamPath: "http://localhost:" + upstreamURL.Port() + "/v1/realtime", Converter: relayconvert.ConverterNone}},
+				Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/realtime", UpstreamPath: "http://" + tc.target + ":" + upstreamURL.Port() + "/v1/realtime", Converter: relayconvert.ConverterNone}},
 			})
 			info.RelayMode = relayconstant.RelayModeRealtime
 			info.RequestURLPath = "/v1/realtime"
@@ -84,6 +105,14 @@ func TestAdaptorMasksDialedHostsInDialFailure(t *testing.T) {
 			common.SetContextKey(c, constant.ContextKeyChannelSetting, info.ChannelSetting)
 
 			_, err := (&Adaptor{}).DoRequest(c, info, nil)
+			if tc.proxy != "" {
+				select {
+				case method := <-proxyRequests:
+					require.Equal(t, http.MethodConnect, method)
+				case <-time.After(5 * time.Second):
+					t.Fatal("the configured local proxy was not contacted")
+				}
+			}
 
 			var apiErr *types.NewAPIError
 			require.ErrorAs(t, err, &apiErr)
