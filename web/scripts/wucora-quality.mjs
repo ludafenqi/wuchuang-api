@@ -124,9 +124,13 @@ for (const [kind, cwd] of [
       (result.status === 1 && text.includes('Format issues found')),
     text
   )
-  formats[kind] = text
+  const marker = 'Format issues found in protected-header-safe check:'
+  const issues = text.includes(marker)
+    ? text.slice(text.indexOf(marker) + marker.length)
+    : ''
+  formats[kind] = issues
     .split(/\r?\n/)
-    .filter((line) => /^(src|scripts)[\\/]/.test(line))
+    .filter((line) => line && fs.existsSync(path.join(cwd, line)))
     .map((line) => line.replaceAll('\\', '/'))
 }
 const newFormats = formats.candidate.filter(
@@ -147,8 +151,8 @@ fs.writeFileSync(
       formats,
       newFormats,
       gate: passed ? 'NO_NEW_ERRORS' : 'FAIL',
-      fullLint: 'BASELINE_FINDINGS',
-      fullFormat: 'BASELINE_FINDINGS',
+      fullLint: diagnostics.candidate.length ? 'BASELINE_FINDINGS' : 'PASS',
+      fullFormat: formats.candidate.length ? 'BASELINE_FINDINGS' : 'PASS',
     },
     null,
     2
