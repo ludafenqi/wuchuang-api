@@ -92,8 +92,6 @@ ${end}`;
         "--paginate",
         "--slurp",
         `repos/${repo}/pulls/${existing.number}/reviews?per_page=100`,
-        "--jq",
-        "map({id,state,commit_id})",
       ]),
     );
     for (const review of pages.flat()) {
