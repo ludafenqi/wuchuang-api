@@ -104,7 +104,10 @@ jobs:
           cd web
           TARGET="$(node -p 'JSON.parse(require("fs").readFileSync("../.github/wucora-ui.json")).integratedUpstream')"
           UI_QUALITY_DIR="$RUNNER_TEMP/wucora-ui-report/quality" bun scripts/wucora-quality.mjs "$TARGET"
-          bun x playwright install --with-deps chromium
+          # Use the runner's AppArmor-allowed Chrome with its sandbox enabled.
+          export UI_BROWSER=/opt/google/chrome/chrome
+          "$UI_BROWSER" --version
+          bun x playwright install-deps chromium
           UI_GATEWAY="$RUNNER_TEMP/wucora-ui-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-ui-report" bun scripts/wucora-browser.mjs
 
       - name: Save main UI review evidence

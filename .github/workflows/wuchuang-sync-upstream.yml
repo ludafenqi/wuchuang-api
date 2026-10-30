@@ -148,11 +148,15 @@ jobs:
       - name: Verify real gateway pages in desktop/mobile and both themes
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         shell: bash
+        env:
+          UI_BROWSER: /opt/google/chrome/chrome
         run: |
           set -euo pipefail
           go build -o "$RUNNER_TEMP/wucora-ui-gateway" .
           cd web
-          bun x playwright install --with-deps chromium
+          # Use the runner's AppArmor-allowed Chrome with its sandbox enabled.
+          "$UI_BROWSER" --version
+          bun x playwright install-deps chromium
           UI_GATEWAY="$RUNNER_TEMP/wucora-ui-gateway" \
             UI_REPORT_DIR="$RUNNER_TEMP/wucora-ui-report" \
             bun scripts/wucora-browser.mjs

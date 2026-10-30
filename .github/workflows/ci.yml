@@ -119,11 +119,15 @@ jobs:
         working-directory: .
         env:
           GOWORK: 'off'
+          UI_BROWSER: /opt/google/chrome/chrome
         run: |
           set -euo pipefail
           go build -o "$RUNNER_TEMP/wucora-review-gateway" .
           cd web
-          bun x playwright install --with-deps chromium
+          # Ubuntu's packaged Chrome has the AppArmor user-namespace allowance.
+          # Keep chromiumSandbox enabled; never change runner-wide restrictions.
+          "$UI_BROWSER" --version
+          bun x playwright install-deps chromium
           UI_GATEWAY="$RUNNER_TEMP/wucora-review-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-review" bun scripts/wucora-browser.mjs
 
       - name: Preserve UI review evidence
