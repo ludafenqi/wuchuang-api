@@ -77,6 +77,8 @@ export const STATIC_I18N_KEYS = [
   'Users interacting with a modified version over a network must be offered its corresponding source. Distribution of Docker images or binaries must also satisfy AGPLv3 source-delivery requirements and preserve license and attribution notices.',
   'Wuchuang AI customizes site branding, footer layouts, visual footer management and this notice. These changes do not imply endorsement by New API or QuantumNous. Modification history and build sources are available in the project repository.',
   'This software includes third-party components under their respective licenses. The dependency inventory and license notices are available in THIRD-PARTY-LICENSES.md; Apache notices and Electron/Chromium attribution requirements are recorded in NOTICE.',
+  'The adjusted price is outside the supported range.',
+  'This expression cannot be adjusted automatically. Keep the source price or edit it manually.',
   'Task usage metadata is unavailable. Pricing details cannot be displayed.',
   'This expression cannot be expanded into a price table. View the original expression below.',
   'This operation is only supported for vLLM or SGLang channels',
