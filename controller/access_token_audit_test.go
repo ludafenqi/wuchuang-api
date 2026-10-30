@@ -834,6 +834,10 @@ func newAuditTestDatabase(t *testing.T, kind, dsn string) (*gorm.DB, string) {
 		path := t.TempDir() + "/audit.db"
 		db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 		require.NoError(t, err)
+		connection, err := db.DB()
+		require.NoError(t, err)
+		// Each fixture owns this pool; Windows cannot remove an open SQLite file.
+		t.Cleanup(func() { require.NoError(t, connection.Close()) })
 		return db, path
 	}
 	require.NotEmpty(t, dsn)
@@ -1076,6 +1080,9 @@ func TestAuditDatabaseMatrix(t *testing.T) {
 					}
 					for range 2 {
 						require.NoError(t, model.InitDB())
+						connection, err := model.DB.DB()
+						require.NoError(t, err)
+						t.Cleanup(func() { require.NoError(t, connection.Close()) })
 						require.NoError(t, model.InitLogDB())
 					}
 					if !upgrade {

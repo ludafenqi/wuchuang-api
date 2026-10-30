@@ -5,6 +5,8 @@ on:
     # GitHub cron is UTC; this is about 10:17 in China (UTC+8).
     - cron: '17 2 * * *'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
@@ -17,20 +19,40 @@ concurrency:
 jobs:
   sync-test-pr:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 90
     env:
       GOWORK: 'off'
+    services:
+      mysql:
+        image: mysql:8.0.46
+        env:
+          MYSQL_ROOT_PASSWORD: disposable-review-only
+          MYSQL_DATABASE: review
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pdisposable-review-only"
+          --health-interval=10s --health-timeout=5s --health-retries=12
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_PASSWORD: disposable-review-only
+          POSTGRES_DB: review
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres -d review"
+          --health-interval=10s --health-timeout=5s --health-retries=12
 
     steps:
       - name: Check out fork main without stored credentials
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.merge_commit_sha || 'main' }}
           fetch-depth: 0
           persist-credentials: false
 
       - name: Prepare a merge candidate, fail closed on conflicts
         id: prepare
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -39,6 +61,11 @@ jobs:
           git remote add upstream https://github.com/QuantumNous/new-api.git
           git fetch --no-tags upstream main
           git fetch --no-tags origin main
+          UPSTREAM_SHA="$(git rev-parse upstream/main)"
+          echo "upstream=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+          echo "Fork base: $(git rev-parse origin/main)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pinned upstream: $UPSTREAM_SHA" >> "$GITHUB_STEP_SUMMARY"
+          git diff --name-only origin/main..."$UPSTREAM_SHA" -- web > upstream-web-changes.txt
 
           if git merge-base --is-ancestor upstream/main origin/main; then
             echo 'changed=false' >> "$GITHUB_OUTPUT"
@@ -47,18 +74,27 @@ jobs:
           fi
 
           git checkout -B automation/upstream-sync origin/main
-          if ! git merge --no-edit upstream/main; then
+          if ! git merge --no-ff --no-edit "$UPSTREAM_SHA"; then
             git merge --abort || true
             echo '::error::Merge conflict. Your main branch has not been changed. Resolve the changes manually.'
             exit 1
           fi
+          TARGET_SHA="$UPSTREAM_SHA" node -e '
+            const fs = require("fs");
+            const file = ".github/wucora-ui.json";
+            const pin = JSON.parse(fs.readFileSync(file));
+            pin.integratedUpstream = process.env.TARGET_SHA;
+            fs.writeFileSync(file, JSON.stringify(pin, null, 2) + "\n");
+          '
+          git add .github/wucora-ui.json
+          git diff --cached --quiet || git commit -m 'chore: record pinned upstream candidate'
           echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo "Merged candidate commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
 
       # Tests happen BEFORE branch push/PR creation, because GitHub does not
       # trigger ordinary pull_request workflows from a PR opened with GITHUB_TOKEN.
       - name: Set up Go
-        if: steps.prepare.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
@@ -68,7 +104,7 @@ jobs:
             tokenkit/go.sum
 
       - name: Vet, build and test backend
-        if: steps.prepare.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -80,22 +116,58 @@ jobs:
           (cd tokenkit && go vet ./... && go build ./...)
           make test
 
+      - name: Verify the WuCora footer extension on three real databases
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        env:
+          FOOTER_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          FOOTER_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+        run: go test ./model -run 'TestFooter' -count=1 -v
+
       - name: Set up Bun
-        if: steps.prepare.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: '1.4.0'
+          bun-version: '1.4.4'
 
       - name: Typecheck, test and build frontend
-        if: steps.prepare.outputs.changed == 'true'
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         shell: bash
         working-directory: web
         run: |
           set -euo pipefail
           bun install --frozen-lockfile
           bun run typecheck
-          bun run test
+          bun run test --maxWorkers=3
+          TARGET="${{ steps.prepare.outputs.upstream }}"
+          if [ -z "$TARGET" ]; then
+            TARGET="$(node -p 'JSON.parse(require("fs").readFileSync("../.github/wucora-ui.json")).integratedUpstream')"
+          fi
+          UI_QUALITY_DIR="$RUNNER_TEMP/wucora-ui-report/quality" bun scripts/wucora-quality.mjs "$TARGET"
           bun run build
+
+      - name: Verify real gateway pages in desktop/mobile and both themes
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/wucora-ui-gateway" .
+          cd web
+          bun x playwright install --with-deps chromium
+          UI_GATEWAY="$RUNNER_TEMP/wucora-ui-gateway" \
+            UI_REPORT_DIR="$RUNNER_TEMP/wucora-ui-report" \
+            bun scripts/wucora-browser.mjs
+
+      - name: Preserve screenshots and regression results
+        if: always() && (github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true')
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: wucora-ui-review-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/wucora-ui-report/*.png
+            ${{ runner.temp }}/wucora-ui-report/result.json
+            ${{ runner.temp }}/wucora-ui-report/quality/
+            upstream-web-changes.txt
+          if-no-files-found: warn
 
       - name: Open or refresh review PR after passing tests
         if: steps.prepare.outputs.changed == 'true'
@@ -115,10 +187,23 @@ jobs:
             --head automation/upstream-sync --base main --json number \
             --jq '.[0].number // empty')"
           if [ -z "$PR_NUMBER" ]; then
+            cat > "$RUNNER_TEMP/upstream-pr.md" <<EOF
+          ## 变更描述
+          AI-assisted automated merge of New API upstream commit ${{ steps.prepare.outputs.upstream }} into fork main. WuCora UI reference: b6f0b02864fe13cdd30dd8c443e1af1e53646c5b.
+
+          ## 运行证明
+          This run passed Go vet/build/tests in root, relaykit and tokenkit, frontend typecheck/tests/build, lint/format regression against the pinned upstream (full baseline findings remain in the artifact), and the real-gateway browser regression. Review the uploaded screenshots, upstream web changes and any newly added features before approving. Database changes require the real SQLite/MySQL/PostgreSQL matrix; this workflow alone does not certify migrations.
+
+          Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+
+          ## 审阅要求
+          Keep **Create a merge commit** history; do not squash. Human visual review and release approval remain pending. Merge to main only after all applicable checks pass; reuse the manual GHCR publish workflow and deploy a verified image digest after backup and recovery review.
+          EOF
             gh pr create --repo "$GITHUB_REPOSITORY" \
               --base main --head automation/upstream-sync \
+              --draft \
               --title 'chore: review New API upstream updates' \
-              --body "Upstream merge passed backend and frontend tests in this workflow. Review changes before merging. Keep the **Create a merge commit** history (avoid squash) for correct future update detection. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              --body-file "$RUNNER_TEMP/upstream-pr.md"
           else
             echo "Updated existing PR #${PR_NUMBER}" >> "$GITHUB_STEP_SUMMARY"
           fi

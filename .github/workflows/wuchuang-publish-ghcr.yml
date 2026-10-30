@@ -84,7 +84,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: '1.4.0'
+          bun-version: '1.4.4'
 
       - name: Typecheck, test and build frontend
         shell: bash
@@ -95,6 +95,28 @@ jobs:
           bun run typecheck
           bun run test
           bun run build
+
+      - name: Verify the selected main UI before publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          go build -o "$RUNNER_TEMP/wucora-ui-gateway" .
+          cd web
+          TARGET="$(node -p 'JSON.parse(require("fs").readFileSync("../.github/wucora-ui.json")).integratedUpstream')"
+          UI_QUALITY_DIR="$RUNNER_TEMP/wucora-ui-report/quality" bun scripts/wucora-quality.mjs "$TARGET"
+          bun x playwright install --with-deps chromium
+          UI_GATEWAY="$RUNNER_TEMP/wucora-ui-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-ui-report" bun scripts/wucora-browser.mjs
+
+      - name: Save main UI review evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-main-ui-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/wucora-ui-report/*.png
+            ${{ runner.temp }}/wucora-ui-report/result.json
+            ${{ runner.temp }}/wucora-ui-report/quality/
+          if-no-files-found: warn
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
@@ -195,7 +217,7 @@ jobs:
       - name: Set up Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
-          bun-version: '1.4.0'
+          bun-version: '1.4.4'
 
       - name: Typecheck, test and build the test frontend
         working-directory: web
