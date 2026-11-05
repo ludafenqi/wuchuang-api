@@ -23,6 +23,12 @@ jobs:
     env:
       GOWORK: 'off'
     services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=3s --health-retries=12
       mysql:
         image: mysql:8.0.46
         env:
@@ -50,8 +56,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up Bun for conflict verification
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.4'
+
       - name: Test upstream review PR creation and refresh
-        run: node --test .github/scripts/upstream-review.test.mjs
+        run: node --test .github/scripts/upstream-review.test.mjs .github/scripts/merge-upstream-locales.test.mjs
 
       - name: Prepare a merge candidate, fail closed on conflicts
         id: prepare
@@ -78,9 +89,12 @@ jobs:
 
           git checkout -B automation/upstream-sync origin/main
           if ! git merge --no-ff --no-edit "$UPSTREAM_SHA"; then
-            git merge --abort || true
-            echo '::error::Merge conflict. Your main branch has not been changed. Resolve the changes manually.'
-            exit 1
+            if ! node .github/scripts/merge-upstream-locales.mjs; then
+              git merge --abort || true
+              echo '::error::Unresolved semantic or non-locale conflict. Main has not changed.'
+              exit 1
+            fi
+            git commit --no-edit
           fi
           TARGET_SHA="$UPSTREAM_SHA" node -e '
             const fs = require("fs");
@@ -125,9 +139,21 @@ jobs:
         env:
           FOOTER_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           FOOTER_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+          TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+          TEST_AUTH_REDIS_ADDR: '127.0.0.1:6379'
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
-        run: go test ./model -run 'TestFooter|^TestModelPricingIssuesDatabaseMatrix$' -count=1 -v
+        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+
+      - name: Verify channel creation and rollback on three real databases
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
+            TEST_CHANNEL_SQL_DSN="$dsn" go test ./controller -run '^TestAddChannel(ReturnsCreatedIDs|InvalidVertexBatchDoesNotReturnResults|RollbackDoesNotReturnIDs|PanicRollsBackWithoutSuccess)$' -count=1 -v
+          done
 
       - name: Set up Bun
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'

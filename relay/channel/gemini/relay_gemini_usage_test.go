@@ -754,3 +754,63 @@ func TestGeminiHandlersCountGroundingQueries(t *testing.T) {
 		})
 	}
 }
+
+func TestEmbeddingHandlersUseReportedUsage(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, mode := range []string{"openai", "native_single", "native_batch"} {
+		for _, tc := range []struct {
+			name       string
+			metadata   string
+			wantPrompt int
+		}{
+			{name: "reported input and modalities", metadata: `,"usageMetadata":{"promptTokenCount":37,"candidatesTokenCount":999,"totalTokenCount":1036,"promptTokenDetails":[{"modality":"TEXT","tokenCount":24},{"modality":"IMAGE","tokenCount":13}]}`, wantPrompt: 37},
+			{name: "missing metadata retains estimate", wantPrompt: 20},
+			{name: "zero metadata retains estimate", metadata: `,"usageMetadata":{"promptTokenCount":0}`, wantPrompt: 20},
+			{name: "negative metadata retains estimate", metadata: `,"usageMetadata":{"promptTokenCount":-1}`, wantPrompt: 20},
+		} {
+			t.Run(mode+"/"+tc.name, func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(recorder)
+				c.Request = httptest.NewRequest(http.MethodPost, "/v1/embeddings", nil)
+				info := &relaycommon.RelayInfo{
+					OriginModelName:        "text-embedding-004",
+					ChannelMeta:            &relaycommon.ChannelMeta{UpstreamModelName: "text-embedding-004"},
+					IsGeminiBatchEmbedding: mode == "native_batch",
+				}
+				info.SetEstimatePromptTokens(20)
+				body := `{"embeddings":[{"values":[0.5,0.75]}]` + tc.metadata + `}`
+				if mode == "native_single" {
+					body = `{"embedding":{"values":[0.5,0.75]}` + tc.metadata + `}`
+				}
+				response := &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}
+				var usage *dto.Usage
+				var apiError *types.NewAPIError
+				if mode == "openai" {
+					usage, apiError = GeminiEmbeddingHandler(c, info, response)
+				} else {
+					usage, apiError = NativeGeminiEmbeddingHandler(c, response, info)
+				}
+				require.Nil(t, apiError)
+				require.NotNil(t, usage)
+				assert.Equal(t, tc.wantPrompt, usage.PromptTokens)
+				assert.Equal(t, tc.wantPrompt, usage.TotalTokens)
+				assert.Zero(t, usage.CompletionTokens)
+				if tc.wantPrompt == 37 {
+					require.NotNil(t, usage.BillingUsage)
+					require.NotNil(t, usage.BillingUsage.GeminiUsageMetadata)
+					assert.Equal(t, 37, usage.BillingUsage.GeminiUsageMetadata.PromptTokenCount)
+					assert.Len(t, usage.BillingUsage.GeminiUsageMetadata.PromptTokensDetails, 2)
+				}
+				if mode == "openai" {
+					var forwarded dto.OpenAIEmbeddingResponse
+					require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &forwarded))
+					assert.Equal(t, tc.wantPrompt, forwarded.Usage.PromptTokens)
+					require.Len(t, forwarded.Data, 1)
+					assert.Equal(t, []float64{0.5, 0.75}, forwarded.Data[0].Embedding)
+				} else {
+					assert.Equal(t, body, recorder.Body.String())
+				}
+			})
+		}
+	}
+}

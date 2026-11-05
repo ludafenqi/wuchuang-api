@@ -3,12 +3,14 @@ package model
 import (
 	"errors"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -51,7 +53,7 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 				initCol()
 				assert.NoError(t, sqlDB.Close())
 			})
-			require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &UserSession{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &UserSession{}, &TwoFA{}))
 			var version string
 			query := "SELECT version()"
 			if dialect == "sqlite" {
@@ -60,11 +62,53 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.Raw(query).Scan(&version).Error)
 			t.Logf("database version: %s", version)
 			useUserCacheMiniRedis(t)
+			if address := os.Getenv("TEST_AUTH_REDIS_ADDR"); address != "" {
+				// This opt-in address must name a disposable test Redis instance.
+				miniClient := common.RDB
+				client := redis.NewClient(&redis.Options{Addr: address, DB: 15})
+				common.RDB = client
+				t.Cleanup(func() {
+					assert.NoError(t, client.Close())
+					common.RDB = miniClient
+				})
+				require.NoError(t, client.Ping(t.Context()).Err())
+				require.NoError(t, client.FlushDB(t.Context()).Err())
+				server, err := client.Info(t.Context(), "server").Result()
+				require.NoError(t, err)
+				for line := range strings.SplitSeq(server, "\n") {
+					if strings.HasPrefix(line, "redis_version:") {
+						t.Log(strings.TrimSpace(line))
+					}
+				}
+			}
 
 			user := User{Username: "cache-integrity-user", AffCode: "cache-int", Role: common.RoleCommonUser,
 				Status: common.UserStatusEnabled, AuthVersion: 1, Group: "default", Quota: 100}
 			require.NoError(t, DB.Create(&user).Error)
 			t.Cleanup(func() { assert.NoError(t, db.Unscoped().Delete(&user).Error) })
+			t.Run("mfa_lockout_restarts_and_relocks", func(t *testing.T) {
+				expired := time.Now().Add(-time.Minute)
+				factor := TwoFA{UserId: user.Id, Secret: "disposable-matrix-only", IsEnabled: true, FailedAttempts: common.MaxFailAttempts, LockedUntil: &expired}
+				require.NoError(t, db.Create(&factor).Error)
+				t.Cleanup(func() { assert.NoError(t, db.Delete(&factor).Error) })
+				require.NoError(t, factor.IncrementFailedAttempts())
+				var stored TwoFA
+				require.NoError(t, db.First(&stored, factor.Id).Error)
+				assert.Equal(t, 1, stored.FailedAttempts)
+				assert.Nil(t, stored.LockedUntil)
+				for range common.MaxFailAttempts - 1 {
+					require.NoError(t, factor.IncrementFailedAttempts())
+				}
+				require.NoError(t, db.First(&stored, factor.Id).Error)
+				assert.Equal(t, common.MaxFailAttempts, stored.FailedAttempts)
+				require.NotNil(t, stored.LockedUntil)
+				assert.True(t, stored.IsLocked())
+				deadline := *stored.LockedUntil
+				require.NoError(t, factor.IncrementFailedAttempts())
+				require.NoError(t, db.First(&stored, factor.Id).Error)
+				assert.Equal(t, common.MaxFailAttempts, stored.FailedAttempts)
+				assert.True(t, deadline.Equal(*stored.LockedUntil))
+			})
 			require.NoError(t, populateUserCache(user))
 			quotaResult, err := cacheApplyUserQuotaDelta(user.Id, -70)
 			require.NoError(t, err)

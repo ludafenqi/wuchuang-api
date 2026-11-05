@@ -26,6 +26,12 @@ jobs:
     env:
       GOWORK: 'off'
     services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=3s --health-retries=12
       mysql:
         image: mysql:8.0.46
         env:
@@ -52,8 +58,13 @@ jobs:
           repository: ${{ github.event.pull_request.base.repo.full_name || github.repository }}
           ref: ${{ github.sha }}
 
+      - name: Set up Bun for conflict verification
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.4'
+
       - name: Test upstream review PR creation and refresh
-        run: node --test .github/scripts/upstream-review.test.mjs
+        run: node --test .github/scripts/upstream-review.test.mjs .github/scripts/merge-upstream-locales.test.mjs
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -94,11 +105,24 @@ jobs:
       - name: Test root, relaykit, and tokenkit modules
         run: make test
 
-      - name: Verify stored plugin pricing on three real databases
+      - name: Verify auth, MFA, footer and pricing on three real databases
         env:
+          TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+          TEST_AUTH_REDIS_ADDR: '127.0.0.1:6379'
+          FOOTER_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          FOOTER_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
-        run: go test ./model -run '^TestModelPricingIssuesDatabaseMatrix$' -count=1 -v
+        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+
+      - name: Verify channel creation and rollback on three real databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
+            TEST_CHANNEL_SQL_DSN="$dsn" go test ./controller -run '^TestAddChannel(ReturnsCreatedIDs|InvalidVertexBatchDoesNotReturnResults|RollbackDoesNotReturnIDs|PanicRollsBackWithoutSuccess)$' -count=1 -v
+          done
 
   frontend:
     name: Frontend and real-gateway UI regression

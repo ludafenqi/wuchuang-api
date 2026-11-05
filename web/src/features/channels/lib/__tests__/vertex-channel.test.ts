@@ -112,3 +112,53 @@ describe('Vertex AI API Key project ID', () => {
     )
   })
 })
+
+describe('Vertex AI API version', () => {
+  test.each(['v1', 'v1beta1'] as const)(
+    'preserves %s when saving and reopening a channel',
+    (version) => {
+      const form = vertexAPIKeyForm({ vertex_api_version: version })
+      const settings = savedSettings(form)
+      expect(settings.vertex_api_version).toBe(version)
+      const channel = channelSchema.parse({
+        id: 8,
+        name: 'Vertex AI',
+        type: CHANNEL_TYPE_VERTEX_AI,
+        key: '',
+        status: 1,
+        created_time: 1,
+        test_time: 0,
+        response_time: 0,
+        balance_updated_time: 0,
+        models: 'gemini-4-argon',
+        group: 'default',
+        other: '{"default":"global"}',
+        settings: JSON.stringify(settings),
+      })
+      expect(transformChannelToFormDefaults(channel).vertex_api_version).toBe(
+        version
+      )
+    }
+  )
+
+  test('new channels use v1 and invalid versions are rejected', () => {
+    expect(savedSettings(vertexAPIKeyForm()).vertex_api_version).toBe('v1')
+    expect(
+      channelFormSchema.safeParse({
+        ...vertexAPIKeyForm(),
+        vertex_api_version: 'v2',
+      }).success
+    ).toBe(false)
+  })
+
+  test('switching away from Vertex removes its saved version', () => {
+    const settings = savedSettings(
+      vertexAPIKeyForm({
+        type: 1,
+        vertex_api_version: 'v1beta1',
+        settings: JSON.stringify({ vertex_api_version: 'v1beta1' }),
+      })
+    )
+    expect(settings).not.toHaveProperty('vertex_api_version')
+  })
+})
