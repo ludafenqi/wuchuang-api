@@ -26,7 +26,7 @@ import { chromium, request } from 'playwright'
 const root = process.env.PRODUCT_SHA
 const output = path.resolve(process.env.UI_REPORT_DIR)
 const origin = process.env.CONTAINER_ORIGIN
-assert.match(origin, /^http:\/\/127\.0\.0\.1:\d+$/)
+assert.match(origin, /^http:\/\/172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+:3000$/)
 const backend = origin
 const assets = 'embedded in container /new-api'
 const logoutOnly = false

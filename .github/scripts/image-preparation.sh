@@ -24,7 +24,7 @@ PY
   (cd "$evidence/licenses" && sha256sum *) > "$evidence/license-sha256.txt"
   docker network create --internal wucora-image-review > /dev/null
   docker network inspect wucora-image-review > "$evidence/network-inspect.json"
-  docker run -d --name wucora-image-review --network wucora-image-review -p 127.0.0.1::3000 \
+  docker run -d --name wucora-image-review --network wucora-image-review \
     --tmpfs /data:rw,size=256m \
     -e SQLITE_PATH=/data/isolated.db -e SQL_DSN= -e LOG_SQL_DSN= -e REDIS_CONN_STRING= \
     -e SESSION_SECRET=disposable-container-review-only-9447 \
@@ -32,10 +32,11 @@ PY
     -e CRITICAL_RATE_LIMIT=2000 -e HTTP_PROXY=http://127.0.0.1:1 \
     -e HTTPS_PROXY=http://127.0.0.1:1 -e NO_PROXY=127.0.0.1,localhost \
     "$IMAGE" > "$evidence/container-id.txt"
-  port="$(docker port wucora-image-review 3000/tcp | sed 's/127.0.0.1://')"
-  printf 'CONTAINER_ORIGIN=http://127.0.0.1:%s\n' "$port" >> "$GITHUB_ENV"
+  address="$(docker inspect -f '{{(index .NetworkSettings.Networks "wucora-image-review").IPAddress}}' wucora-image-review)"
+  [[ "$address" =~ ^172\.(1[6-9]|2[0-9]|3[01])\.[0-9]+\.[0-9]+$ ]]
+  printf 'CONTAINER_ORIGIN=http://%s:3000\n' "$address" >> "$GITHUB_ENV"
   for attempt in $(seq 1 120); do
-    if curl --fail --silent "http://127.0.0.1:$port/api/status" > "$evidence/status-before.json"; then exit 0; fi
+    if curl --noproxy '*' --fail --silent "http://$address:3000/api/status" > "$evidence/status-before.json"; then exit 0; fi
     sleep 1
   done
   echo 'Container readiness failed' >&2
