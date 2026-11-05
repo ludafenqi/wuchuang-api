@@ -2986,7 +2986,10 @@ test.each([
       name: 'Use Vertex AI v1beta1 endpoint',
     })
     await waitFor(() =>
-      expect(toggle).toHaveAttribute('aria-checked', String(saved === 'v1beta1'))
+      expect(toggle).toHaveAttribute(
+        'aria-checked',
+        String(saved === 'v1beta1')
+      )
     )
 
     if (interaction === 'keyboard') {
@@ -3014,7 +3017,10 @@ test.each([
       name: 'Use Vertex AI v1beta1 endpoint',
     })
     await waitFor(() =>
-      expect(reopened).toHaveAttribute('aria-checked', String(next === 'v1beta1'))
+      expect(reopened).toHaveAttribute(
+        'aria-checked',
+        String(next === 'v1beta1')
+      )
     )
   }
 )
