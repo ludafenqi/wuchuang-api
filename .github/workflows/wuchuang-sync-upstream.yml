@@ -120,12 +120,14 @@ jobs:
           (cd tokenkit && go vet ./... && go build ./...)
           make test
 
-      - name: Verify the WuCora footer extension on three real databases
+      - name: Verify footer and stored plugin pricing on three real databases
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         env:
           FOOTER_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           FOOTER_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
-        run: go test ./model -run 'TestFooter' -count=1 -v
+          PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+        run: go test ./model -run 'TestFooter|^TestModelPricingIssuesDatabaseMatrix$' -count=1 -v
 
       - name: Set up Bun
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
