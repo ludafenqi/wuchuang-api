@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -273,13 +275,27 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
+	previousType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousType, previousLogType)
+		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
+	})
+	t.Setenv("SQL_DSN", os.Getenv("TEST_TASK_SQL_DSN"))
+	t.Setenv("LOG_SQL_DSN", "")
+	common.IsMasterNode = false
+	common.SQLitePath = filepath.Join(t.TempDir(), "relayed-stream.db")
+	require.NoError(t, model.InitDB())
+	database := model.DB
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	previousMemoryCache := common.MemoryCacheEnabled
 	previousBatchUpdate := common.BatchUpdateEnabled
 	previousLogConsume := common.LogConsumeEnabled
 	previousRedisEnabled := common.RedisEnabled
 	previousDeadline := constant.TaskPluginProtocolTimeoutSeconds
-	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
 	model.DB = database
 	model.LOG_DB = database
@@ -288,6 +304,13 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 	common.LogConsumeEnabled = true
 	common.RedisEnabled = false
 	constant.TaskPluginProtocolTimeoutSeconds = 1
+	versionQuery := "SELECT VERSION()"
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		versionQuery = "SELECT sqlite_version()"
+	}
+	var version string
+	require.NoError(t, database.Raw(versionQuery).Scan(&version).Error)
+	t.Logf("database=%s version=%s", common.MainDatabaseType(), version)
 	var failTaskInsert atomic.Bool
 	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:fail_task_insert", func(tx *gorm.DB) {
 		if failTaskInsert.Load() && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Task" {
