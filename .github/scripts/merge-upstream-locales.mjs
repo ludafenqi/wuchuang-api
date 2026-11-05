@@ -101,7 +101,10 @@ export function resolveLocaleConflicts(root, bun = 'bun') {
       const [base, ours, theirs] = [1, 2, 3].map(stage => parseLocale(git(['show', `:${stage}:${file}`])))
       expected[lang] = mergeTranslations(base, ours, theirs)
       proposals[lang] = expected[lang]
-    } else expected[lang] = parseLocale(fs.readFileSync(path.join(root, file), 'utf8'))
+    } else {
+      expected[lang] = parseLocale(git(['show', ':' + file]))
+      assert.deepEqual(parseLocale(fs.readFileSync(path.join(root, file), 'utf8')), expected[lang], 'Unstaged locale changes: ' + lang)
+    }
   }
   const writer = path.join(root, 'web/scripts/add-missing-keys.mjs')
   const temporary = fs.mkdtempSync(path.join(process.env.RUNNER_TEMP || os.tmpdir(), 'wucora-locale-merge-'))
@@ -118,7 +121,7 @@ export function resolveLocaleConflicts(root, bun = 'bun') {
     for (const lang of languages) {
       assert.deepEqual(parseLocale(fs.readFileSync(path.join(root, `web/src/i18n/locales/${lang}.json`), 'utf8')), expected[lang], 'i18n normalization changed meaning: ' + lang)
     }
-    git(['add', '--', ...conflicts])
+    git(['add', '--', ...supported])
     assert.equal(git(['diff', '--name-only', '--diff-filter=U']).trim(), '')
     return conflicts
   } finally {

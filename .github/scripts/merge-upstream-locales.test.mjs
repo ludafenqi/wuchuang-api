@@ -106,3 +106,17 @@ test('a normalizer semantic change cannot stage a candidate and merge abort rest
   git(['merge', '--abort'])
   assert.equal(fs.readFileSync(path.join(root, file), 'utf8').trim().replaceAll('\r\n', '\n'), ours.replaceAll('\r\n', '\n'))
 })
+
+test('partial conflicts include proved normalization of the other languages in the committed result', t => {
+  const { root, git } = mergeFixture(t)
+  const expected = { A: 'same', Local: 'WuCora', Upstream: 'Vertex', Z: 'same' }
+  for (const lang of ['zh', 'zh-TW', 'fr', 'ja', 'ru', 'vi']) {
+    const file = `web/src/i18n/locales/${lang}.json`
+    fs.writeFileSync(path.join(root, file), JSON.stringify({ translation: expected }))
+    git(['add', file])
+  }
+  fs.writeFileSync(path.join(root, 'web/scripts/sync-i18n.mjs'), "import fs from 'node:fs';for(const f of fs.readdirSync('src/i18n/locales')){const p='src/i18n/locales/'+f;fs.writeFileSync(p,JSON.stringify(JSON.parse(fs.readFileSync(p)),null,2)+'\\n')}\n")
+  assert.equal(resolveLocaleConflicts(root, process.env.BUN_BINARY || 'bun').length, 1)
+  assert.equal(git(['diff', '--name-only', '--', 'web/src/i18n/locales']), '')
+  assert.deepEqual(parseLocale(git(['show', ':web/src/i18n/locales/zh.json'])), expected)
+})
