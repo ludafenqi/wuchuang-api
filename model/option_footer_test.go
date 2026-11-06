@@ -105,9 +105,11 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			require.NoError(t, common.UnmarshalJsonStr(validFooterConfig, &unicodeConfig))
 			unicodeConfig.Description = strings.Repeat("😀", 500)
 			unicodeConfig.Copyright = strings.Repeat("😀", 200)
-			unicodeConfig.OpenSourceNotice = "## Credits\n[Source](https://example.com/source)"
 			unicodeConfig.Links = []system_setting.FooterLink{{ID: "unicode", Label: strings.Repeat("😀", 80), Group: strings.Repeat("😀", 40), URL: "/pricing", Visible: true, Source: "custom"}}
-			encoded, err := common.Marshal(unicodeConfig)
+			encoded, err := common.Marshal(struct {
+				system_setting.FooterConfig
+				OpenSourceNotice string `json:"openSourceNotice"`
+			}{unicodeConfig, "## Credits\n[Source](https://example.com/source)"})
 			require.NoError(t, err)
 			matrixConfig := string(encoded)
 			for range 2 {
