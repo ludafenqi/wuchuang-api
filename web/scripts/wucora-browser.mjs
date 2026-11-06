@@ -295,6 +295,124 @@ try {
           scope: 'real local account, authenticated layout',
         })
       }
+      if (!logoutOnly) {
+        const pricingRoute = '/system-settings/billing/model-pricing'
+        const headers = { Authorization: `Bearer ${login.data.access_token}` }
+        const snapshot = await context.request
+          .get(`${origin}/api/option/model_pricing?model=gpt-image-2`, {
+            headers,
+          })
+          .then((response) => response.json())
+        assert.equal(snapshot.success, true)
+        const fixture = await context.request
+          .patch(`${origin}/api/option/model_pricing`, {
+            headers,
+            data: {
+              changes: [
+                {
+                  model_name: 'gpt-image-2',
+                  expected_version:
+                    snapshot.data.entries[0]?.version ||
+                    snapshot.data.empty_version,
+                  pricing: { ModelPrice: 0.04 },
+                },
+              ],
+            },
+          })
+          .then((response) => response.json())
+        assert.equal(
+          fixture.success,
+          true,
+          'Seed a saved price in the disposable gateway'
+        )
+        await page.goto(origin + pricingRoute)
+        await page
+          .getByPlaceholder('Search models...', { exact: true })
+          .fill('gpt-image-2')
+        const row = page.getByRole('row').filter({ hasText: 'gpt-image-2' })
+        await row
+          .getByRole('button', { name: 'Open menu', exact: true })
+          .click()
+        await page
+          .getByRole('menuitem', { name: 'Delete', exact: true })
+          .click()
+        await row.getByText('Pending deletion', { exact: true }).waitFor()
+        await row.getByRole('button', { name: 'Undo', exact: true }).click()
+        await row
+          .getByRole('button', { name: 'Open menu', exact: true })
+          .click()
+        await page
+          .getByRole('menuitem', { name: 'Delete', exact: true })
+          .click()
+        const save = page
+          .getByRole('button', { name: /Save model prices/ })
+          .filter({ visible: true })
+          .first()
+        await save.click()
+        const dialog = page.getByRole('alertdialog', {
+          name: 'Confirm price changes',
+        })
+        await dialog
+          .getByText('Remove saved price', { exact: true })
+          .filter({ visible: true })
+          .waitFor()
+        assert.ok(
+          await dialog.evaluate(
+            (element) =>
+              element.getBoundingClientRect().right <= innerWidth + 1 &&
+              element.getBoundingClientRect().left >= -1
+          ),
+          `Price confirmation overflow at ${width}/${theme}`
+        )
+        await page.screenshot({
+          path: path.join(output, `pricing-confirm-${width}-${theme}.png`),
+          fullPage: true,
+        })
+        await dialog
+          .getByRole('button', { name: 'Cancel', exact: true })
+          .click()
+        const before = await context.request
+          .get(`${origin}/api/option/model_pricing?model=gpt-image-2`, {
+            headers,
+          })
+          .then((response) => response.json())
+        assert.equal(
+          before.data.entries[0].configured.ModelPrice,
+          0.04,
+          'Cancel must leave the saved price unchanged'
+        )
+        await save.click()
+        const [saved] = await Promise.all([
+          page.waitForResponse(
+            (response) =>
+              new URL(response.url()).pathname ===
+                '/api/option/model_pricing' &&
+              response.request().method() === 'PATCH'
+          ),
+          dialog
+            .getByRole('button', { name: 'Confirm and save', exact: true })
+            .click(),
+        ])
+        assert.equal((await saved.json()).success, true)
+        const after = await context.request
+          .get(`${origin}/api/option/model_pricing?model=gpt-image-2`, {
+            headers,
+          })
+          .then((response) => response.json())
+        assert.equal(
+          after.data.entries[0].configured.ModelPrice,
+          undefined,
+          'Only confirmation removes the saved override'
+        )
+        results.push({
+          route: pricingRoute,
+          theme,
+          width,
+          status: 'PASS',
+          scope:
+            'real saved price: pending deletion, undo, cancel preserves data, confirmation persists deletion; responsive dialog screenshot',
+        })
+      }
       if (width === 1440 && theme === 'light') {
         let replay
         let replayStage = 'browser-session-snapshot'

@@ -448,7 +448,7 @@ func TestModelPricingIssuesDatabaseMatrix(t *testing.T) {
 			DB = db
 			common.SetMainDatabaseType(common.DatabaseType(engine))
 			initCol()
-			require.NoError(t, db.AutoMigrate(&Option{}, &TaskPlugin{}, &Channel{}))
+			require.NoError(t, db.AutoMigrate(&Option{}, &TaskPlugin{}, &Channel{}, &Ability{}))
 			rebuildTaskAliasView()
 			var version string
 			if engine == "sqlite" {
@@ -484,6 +484,7 @@ func TestModelPricingIssuesDatabaseMatrix(t *testing.T) {
 				{ModelName: "pricing-usage-model", PluginKey: key, PluginName: key, Reason: ModelPricingIssueStale},
 				{ModelName: "removed-model", PluginKey: key, PluginName: key, Reason: ModelPricingIssueStale},
 			}, issues)
+			t.Run("used builtin snapshot", TestModelPricingSnapshotListsUsedBuiltinPrices)
 		})
 	}
 }

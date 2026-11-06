@@ -125,6 +125,9 @@ test("creates a draft with the actual base, upstream, candidate, UI and run evid
     assert.ok(state.pr.body.includes(value), value);
   }
   assert.ok(state.pr.body.includes("- [ ] 本轮视觉与合并批准"));
+  assert.ok(state.pr.body.includes("## 🔗 关联任务 / Related Issue"));
+  assert.ok(state.pr.body.includes("## 📸 运行证明 / Proof of Work"));
+  assert.ok(state.pr.body.includes("- [ ] **人工确认:**"));
   assert.equal(state.pr.isDraft, true);
 });
 

@@ -5,6 +5,15 @@ on:
     # GitHub cron is UTC; this is about 10:17 in China (UTC+8).
     - cron: '17 2 * * *'
   workflow_dispatch:
+    inputs:
+      upstream_sha:
+        description: 'Optional full upstream SHA; scheduled runs use upstream/main'
+        required: false
+        type: string
+      resolved_candidate:
+        description: 'Optional full fork commit SHA containing an explicitly resolved merge'
+        required: false
+        type: string
   pull_request:
     branches: [main]
 
@@ -68,45 +77,27 @@ jobs:
         id: prepare
         if: github.event_name != 'pull_request'
         shell: bash
+        env:
+          REQUESTED_UPSTREAM: ${{ inputs.upstream_sha }}
+          RESOLVED_CANDIDATE: ${{ inputs.resolved_candidate }}
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git remote add upstream https://github.com/QuantumNous/new-api.git
-          git fetch --no-tags upstream main
-          git fetch --no-tags origin main
-          UPSTREAM_SHA="$(git rev-parse upstream/main)"
-          echo "upstream=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
-          echo "Fork base: $(git rev-parse origin/main)" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pinned upstream: $UPSTREAM_SHA" >> "$GITHUB_STEP_SUMMARY"
-          git diff --name-only origin/main..."$UPSTREAM_SHA" -- web > upstream-web-changes.txt
+          # The selected workflow ref supplies the driver, while the product
+          # starts at main. This permits testing a driver repair before merging it.
+          git fetch --no-tags origin "$GITHUB_SHA"
+          git show "$GITHUB_SHA:.github/scripts/prepare-upstream-candidate.mjs" > "$RUNNER_TEMP/prepare-upstream-candidate.mjs"
+          node "$RUNNER_TEMP/prepare-upstream-candidate.mjs"
 
-          if git merge-base --is-ancestor upstream/main origin/main; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-            echo 'Official main is already included in fork main.' >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          git checkout -B automation/upstream-sync origin/main
-          if ! git merge --no-ff --no-edit "$UPSTREAM_SHA"; then
-            if ! node .github/scripts/merge-upstream-locales.mjs; then
-              git merge --abort || true
-              echo '::error::Unresolved semantic or non-locale conflict. Main has not changed.'
-              exit 1
-            fi
-            git commit --no-edit
-          fi
-          TARGET_SHA="$UPSTREAM_SHA" node -e '
-            const fs = require("fs");
-            const file = ".github/wucora-ui.json";
-            const pin = JSON.parse(fs.readFileSync(file));
-            pin.integratedUpstream = process.env.TARGET_SHA;
-            fs.writeFileSync(file, JSON.stringify(pin, null, 2) + "\n");
-          '
-          git add .github/wucora-ui.json
-          git diff --cached --quiet || git commit -m 'chore: record pinned upstream candidate'
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
-          echo "Merged candidate commit: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify candidate preparation and normalized translations
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test .github/scripts/prepare-upstream-candidate.test.mjs
+          (cd web && bun run i18n:sync)
+          git diff --exit-code -- web/src/i18n/locales
 
       # Validate BEFORE pushing: GITHUB_TOKEN pull_request opened/synchronize/
       # reopened runs require approval; they are not automatically running checks.
@@ -145,6 +136,10 @@ jobs:
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
         run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+
+      - name: Verify auth cache operations on a real six-node Redis Cluster
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        run: bash .github/scripts/verify-redis-cluster.sh
 
       - name: Verify channel creation and rollback on three real databases
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'

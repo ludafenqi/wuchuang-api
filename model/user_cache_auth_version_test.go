@@ -1,7 +1,10 @@
 package model
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +17,107 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+// Production uses a single-endpoint client. Connect it to the actual slot
+// owner to exercise its Lua and MGET operations on a six-node Redis Cluster;
+// this does not imply native cluster discovery/routing support in the gateway.
+func TestAuthCacheRealRedisCluster(t *testing.T) {
+	addresses := os.Getenv("TEST_AUTH_REDIS_CLUSTER_ADDRS")
+	if addresses == "" {
+		t.Skip("TEST_AUTH_REDIS_CLUSTER_ADDRS is not configured")
+	}
+	cluster := redis.NewClusterClient(&redis.ClusterOptions{Addrs: strings.Split(addresses, ",")})
+	t.Cleanup(func() { assert.NoError(t, cluster.Close()) })
+	slots, err := cluster.ClusterSlots(t.Context()).Result()
+	require.NoError(t, err)
+	masters, nodes := map[string]bool{}, map[string]bool{}
+	for _, slot := range slots {
+		require.NotEmpty(t, slot.Nodes)
+		masters[slot.Nodes[0].ID] = true
+		for _, node := range slot.Nodes {
+			nodes[node.ID] = true
+		}
+	}
+	require.GreaterOrEqual(t, len(masters), 3, "A single-node cluster cannot verify this regression")
+	require.GreaterOrEqual(t, len(nodes), 6, "Expected three masters and three replicas")
+	t.Logf("Real Redis Cluster: %d masters, %d nodes, %d slot ranges", len(masters), len(nodes), len(slots))
+	oldRDB, oldEnabled, oldSecret := common.RDB, common.RedisEnabled, common.CryptoSecret
+	common.RedisEnabled, common.CryptoSecret = true, "disposable-cluster-regression-only"
+	t.Cleanup(func() { common.RDB, common.RedisEnabled, common.CryptoSecret = oldRDB, oldEnabled, oldSecret })
+
+	for _, family := range []string{"user", "token"} {
+		t.Run(family, func(t *testing.T) {
+			const userID = 42076001
+			const tokenKey = "disposable-cluster-regression-token"
+			keys := []string{getUserCacheKey(userID), getUserAuthFenceKey(userID), getUserAuthVersionKey(userID)}
+			oldFence := fmt.Sprintf("auth:user:fence:%d", userID)
+			if family == "token" {
+				keys = []string{getTokenCacheKey(tokenKey), getTokenCacheFenceKey(tokenKey)}
+				oldFence = "token:fence:" + common.GenerateHMAC(tokenKey)
+			}
+			slot, err := cluster.ClusterKeySlot(t.Context(), keys[0]).Result()
+			require.NoError(t, err)
+			var address string
+			for _, entry := range slots {
+				if slot >= int64(entry.Start) && slot <= int64(entry.End) {
+					address = entry.Nodes[0].Addr
+					break
+				}
+			}
+			require.NotEmpty(t, address)
+			client := redis.NewClient(&redis.Options{Addr: address})
+			common.RDB = client
+			t.Cleanup(func() {
+				for _, key := range keys {
+					assert.NoError(t, client.Del(context.Background(), key).Err())
+				}
+				assert.NoError(t, client.Close())
+			})
+			for _, key := range keys {
+				actual, err := cluster.ClusterKeySlot(t.Context(), key).Result()
+				require.NoError(t, err)
+				assert.Equal(t, slot, actual)
+				require.NoError(t, client.Del(t.Context(), key).Err())
+			}
+			err = client.MGet(t.Context(), keys[0], oldFence).Err()
+			require.ErrorContains(t, err, "CROSSSLOT", "Legacy key layout must reproduce the actual cluster failure")
+			t.Logf("%s production operations use slot %d on %s; legacy layout returns CROSSSLOT", family, slot, address)
+			if family == "user" {
+				user := &UserBase{Id: userID, Username: "cluster-user", Group: "default", AuthVersion: 1, Status: common.UserStatusEnabled, Role: common.RoleCommonUser}
+				require.NoError(t, writeUserCache(user, true))
+				cached, err := cacheGetUserBase(userID)
+				require.NoError(t, err)
+				assert.EqualValues(t, 1, cached.AuthVersion)
+				require.NoError(t, SetUserAuthVersionFence(userID, 2))
+				floor, err := getUserAuthVersionFloor(userID)
+				require.NoError(t, err)
+				assert.EqualValues(t, 2, floor)
+				assert.ErrorIs(t, writeUserCache(user, true), ErrUserAuthCachePending)
+				require.NoError(t, publishCommittedUserAuthVersion(userID, 2))
+				assert.ErrorIs(t, writeUserCache(user, true), ErrUserAuthCachePending)
+				user.AuthVersion = 2
+				require.NoError(t, writeUserCache(user, true))
+				cached, err = cacheGetUserBase(userID)
+				require.NoError(t, err)
+				assert.EqualValues(t, 2, cached.AuthVersion)
+			} else {
+				token := Token{Id: 42076002, UserId: userID, Key: tokenKey, Name: "cluster-token", Status: common.TokenStatusEnabled, RemainQuota: 100, Group: "default"}
+				result, err := cacheInitToken(token)
+				require.NoError(t, err)
+				assert.Equal(t, 1, result)
+				cached, err := cacheGetTokenByKey(tokenKey)
+				require.NoError(t, err)
+				assert.Equal(t, token.Id, cached.Id)
+				require.NoError(t, invalidateTokenCacheForMutation(tokenKey))
+				_, err = cacheGetTokenByKey(tokenKey)
+				assert.Error(t, err)
+				result, err = cacheInitToken(token)
+				require.NoError(t, err)
+				assert.Zero(t, result, "Fenced metadata must not repopulate the cache")
+			}
+		})
+	}
+}
 
 // Sharded Redis hashes only the text inside the first brace pair, so fence
 // and version keys tagged with the untagged cache key share its slot.
