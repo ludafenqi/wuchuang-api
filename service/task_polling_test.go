@@ -823,6 +823,26 @@ func TestSweepTimedOutTasksAtTheDefaultDeadline(t *testing.T) {
 	assert.EqualValues(t, model.TaskStatusFailure, reloadedStuck.Status)
 	assert.Equal(t, "Task timed out", reloadedStuck.FailReason)
 	assert.Equal(t, initialQuota+taskQuota, getUserQuota(t, userID))
+	assert.Equal(t, "100%", reloadedStuck.Progress)
+	assert.Greater(t, reloadedStuck.FinishTime, int64(0))
+	assert.Zero(t, reloadedStuck.Quota)
+	sweepTimedOutTasks(context.Background())
+	assert.Equal(t, initialQuota+taskQuota, getUserQuota(t, userID), "a later sweep must not refund twice")
+	assert.Equal(t, int64(1), countLogs(t))
+
+	constant.TaskTimeoutMinutes = 0
+	sweepTimedOutTasks(context.Background())
+	require.NoError(t, model.DB.First(&reloadedRunning, running.ID).Error)
+	assert.Equal(t, running.Status, reloadedRunning.Status, "an explicitly disabled sweep must preserve a running task")
+	assert.Equal(t, taskQuota, reloadedRunning.Quota)
+
+	constant.TaskTimeoutMinutes = 1440
+	sweepTimedOutTasks(context.Background())
+	require.NoError(t, model.DB.First(&reloadedRunning, running.ID).Error)
+	assert.EqualValues(t, model.TaskStatusFailure, reloadedRunning.Status, "an explicit 24h deployment policy still takes priority")
+	assert.Zero(t, reloadedRunning.Quota)
+	assert.Equal(t, initialQuota+2*taskQuota, getUserQuota(t, userID))
+	assert.Equal(t, int64(2), countLogs(t))
 }
 
 type scriptedPollingAdaptor struct {

@@ -90,6 +90,7 @@ func TestFixedPriceBillingDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.Raw(versionQuery).Scan(&version).Error)
 			t.Logf("database: %s", version)
 			runFixedPriceAccountingCases(t, db, logDB)
+			runCacheBillingSettlementAccountingCases(t, db, logDB)
 		})
 	}
 }
@@ -306,6 +307,83 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 			if !tc.refund && !tc.insufficient {
 				assert.Equal(t, 1, user.RequestCount)
 			}
+		})
+	}
+}
+
+// Exercise cache normalization through reservation, final charge and the
+// consume log, rather than just checking a token subtotal or a displayed price.
+func runCacheBillingSettlementAccountingCases(t *testing.T, db, logDB *gorm.DB) {
+	t.Helper()
+	const initialQuota = 1_000_000
+	const longCacheUsage = `{"prompt_tokens":12000,"total_tokens":12000,"prompt_tokens_details":{"cached_tokens":4000,"cache_write_tokens":7000,"cache_write_tokens_details":{"ttl_30m_tokens":3000,"ttl_12h_tokens":4000}}}`
+	for index, tc := range []struct {
+		name, usage, expression              string
+		modelRatio, completion, group, other float64
+		estimate, want                       int
+	}{
+		{"ordinary tokens and combined multipliers", `{"prompt_tokens":1000,"completion_tokens":100}`, "", 2, 3, 1.5, 1.2, 0, 4680},
+		{"compatible cache creation scalar", `{"prompt_tokens":1510,"completion_tokens":20,"prompt_tokens_details":{"cached_tokens":1200,"cache_creation_input_tokens":300}}`, "", 1, 1, 1, 1, 0, 525},
+		{"OpenAI 12h ratio", longCacheUsage, "", 5, 5, 1, 1, 0, 75750},
+		{"OpenAI 12h legacy expression fallback", longCacheUsage, `tier("standard", p * 10 + c * 50 + cr + cc * 12.5)`, 5, 5, 1, 1, 10000, 75750},
+		{"OpenAI 12h explicit expression and group", longCacheUsage, `tier("standard", p * 10 + c * 50 + cr + cc * 12.5 + cc12h * 25)`, 5, 5, 1.5, 1, 10000, 113625},
+		{"Claude unsplit writes", `{"prompt_tokens":10,"completion_tokens":20,"usage_semantic":"anthropic","prompt_tokens_details":{"cached_tokens":100,"cached_creation_tokens":100}}`, `tier("standard", p * 2 + c * 4 + cr * 0.2 + cc * 2.5 + cc1h * 4)`, 1, 2, 1, 1, 100, 185},
+		{"overlapping OpenAI prefixes clamp remainder", `{"prompt_tokens":3619,"completion_tokens":36,"prompt_tokens_details":{"cached_tokens":2921,"cache_write_tokens":3616}}`, "", 1, 2, 1, 1, 0, 4884},
+		{"zero usage refunds reservation", `{}`, "", 1, 1, 1, 1, 0, 0},
+		{"missing usage retains prompt estimate", "", "", 1, 1, 1, 1, 80, 80},
+		{"zero group refunds reservation", `{"prompt_tokens":1000,"completion_tokens":100}`, "", 2, 3, 0, 1, 0, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			user := model.User{Username: fmt.Sprintf("cache_settlement_%d", index), Quota: initialQuota, Status: common.UserStatusEnabled}
+			require.NoError(t, db.Create(&user).Error)
+			token := model.Token{UserId: user.Id, Key: fmt.Sprintf("cache-settlement-%d", index), RemainQuota: initialQuota, Status: common.TokenStatusEnabled}
+			require.NoError(t, db.Create(&token).Error)
+			channel := model.Channel{Name: "cache-settlement", Key: "unused", Status: common.ChannelStatusEnabled}
+			require.NoError(t, db.Create(&channel).Error)
+			t.Cleanup(func() {
+				require.NoError(t, logDB.Where("user_id = ?", user.Id).Delete(&model.Log{}).Error)
+				require.NoError(t, db.Unscoped().Delete(&token).Error)
+				require.NoError(t, db.Unscoped().Delete(&user).Error)
+				require.NoError(t, db.Unscoped().Delete(&channel).Error)
+			})
+			userID, tokenID, channelID := user.Id, token.Id, channel.Id
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/responses", nil)
+			price := hosttypes.PriceData{ModelRatio: tc.modelRatio, CompletionRatio: tc.completion, CacheRatio: 0.1, CacheCreationRatio: 1.25, CacheCreation5mRatio: 1.25, CacheCreation1hRatio: 2, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: tc.group}}
+			price.CacheCreation12hRatio = 2.5
+			price.AddOtherRatio("request", tc.other)
+			info := &relaycommon.RelayInfo{UserId: userID, TokenId: tokenID, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channelID}, OriginModelName: "cache-settlement-fixture", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), RelayFormat: types.RelayFormatOpenAI, PriceData: price}
+			info.SetEstimatePromptTokens(tc.estimate)
+			if tc.expression != "" {
+				info.TieredBillingSnapshot = makeSnapshot(tc.expression, tc.group, 0, 0)
+			}
+			var usage *dto.Usage
+			if tc.usage != "" {
+				usage = &dto.Usage{}
+				require.NoError(t, common.UnmarshalJsonStr(tc.usage, usage))
+			}
+			require.Nil(t, PreConsumeBilling(ctx, 100, info))
+			require.Nil(t, PreConsumeBilling(ctx, 200, info), "a retry increases the reservation, not a second full charge")
+			assert.Equal(t, initialQuota-200, getUserQuota(t, userID))
+			assert.Equal(t, initialQuota-200, getTokenRemainQuota(t, tokenID))
+
+			PostTextConsumeQuota(ctx, info, usage, nil)
+			var log model.Log
+			require.NoError(t, logDB.Where("user_id = ?", userID).First(&log).Error)
+			actual := log.Quota
+			assert.Equal(t, tc.want, actual)
+			assert.Equal(t, initialQuota-tc.want, getUserQuota(t, userID))
+			assert.Equal(t, initialQuota-tc.want, getTokenRemainQuota(t, tokenID))
+			assert.Equal(t, tc.want, getTokenUsedQuota(t, tokenID))
+			assert.EqualValues(t, tc.want, getChannelUsedQuota(t, channelID))
+			used, _ := getUserUsageAccounting(t, userID)
+			assert.Equal(t, tc.want, used)
+			require.NoError(t, info.Billing.Settle(actual), "settlement is idempotent")
+			assert.Equal(t, initialQuota-actual, getUserQuota(t, userID))
+			var count int64
+			require.NoError(t, logDB.Model(&model.Log{}).Where("user_id = ?", userID).Count(&count).Error)
+			assert.EqualValues(t, 1, count)
+			t.Logf("expected=%d actual=%d wallet=%d token=%d", tc.want, actual, getUserQuota(t, userID), getTokenRemainQuota(t, tokenID))
 		})
 	}
 }
