@@ -284,6 +284,12 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		patchGeminiZeroCompletionUsage(c, info, usage, responseText.String(), imageCount)
 	}
 
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		if streamErr != nil {
+			return nil, panicErr
+		}
+		return usage, panicErr
+	}
 	if streamErr != nil {
 		return usage, types.NewOpenAIError(streamErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}

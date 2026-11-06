@@ -78,6 +78,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	var (
 		newAPIError *types.NewAPIError
 		ws          *websocket.Conn
+		streamPanic bool
 	)
 
 	if relayFormat == types.RelayFormatOpenAIRealtime {
@@ -91,9 +92,19 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	defer func() {
+		if failure := helper.StreamKeepAliveError(c); failure != nil {
+			newAPIError, streamPanic = failure, true
+		}
 		if newAPIError != nil {
+			if streamPanic && c.Writer.Written() {
+				c.Abort()
+				panic(http.ErrAbortHandler)
+			}
 			service.RecordRequestPolicyTermination(c, newAPIError)
 			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			if newAPIError.GetErrorCode() == relaycommon.StreamPanicErrorCode {
+				newAPIError.SetMessage(i18n.T(c, i18n.MsgInternalServerError))
+			}
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			upstreamURLs := common.UpstreamAddresses(c)
 			if relayFormat != types.RelayFormatOpenAIRealtime && c.Writer.Written() &&
@@ -141,7 +152,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		recovered := recover()
 		resultErr := newAPIError
 		if recovered != nil {
-			resultErr = types.NewError(fmt.Errorf("relay panic: %v", recovered), types.ErrorCodeBadResponse)
+			resultErr = types.NewError(errors.New("relay panic"), types.ErrorCodeBadResponse)
 		}
 		if relayFormat != types.RelayFormatOpenAIRealtime {
 			perfmetrics.RecordRelayResult(c.Request.Context(), relayInfo, resultErr)
@@ -157,10 +168,29 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		defer stopKeepAlive()
 	}
 
+	if newAPIError = helper.StreamKeepAliveError(c); newAPIError != nil {
+		return
+	}
 	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
 		return
 	}
 	defer func() {
+		if recovered := recover(); recovered != nil {
+			// The assignment from an adaptor that panics never completes. Use a
+			// safe failure marker when no prior error exists, without formatting
+			// the panic. Do not let the ordinary error responder write a second
+			// response while the panic continues to the global recovery boundary.
+			failure := newAPIError
+			newAPIError = nil
+			if failure == nil {
+				failure = types.NewError(errors.New("relay panic"), types.ErrorCodeBadResponse)
+			}
+			relay.RefundFailedRequestBilling(c, relayInfo, failure)
+			panic(recovered)
+		}
+		if failure := helper.StreamKeepAliveError(c); failure != nil {
+			newAPIError = failure
+		}
 		newAPIError = relay.RefundFailedRequestBilling(c, relayInfo, newAPIError)
 	}()
 
@@ -175,6 +205,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	relayInfo.LastError = nil
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		if newAPIError = helper.StreamKeepAliveError(c); newAPIError != nil {
+			return
+		}
 		relayInfo.StreamStatus = nil
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0
@@ -214,6 +247,14 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			newAPIError = relayHandler(c, relayInfo)
 		}
 
+		streamPanic = relayInfo.StreamStatus.PanicError() != nil
+		if failure := helper.StreamKeepAliveError(c); failure != nil {
+			newAPIError = failure
+			return
+		}
+		if streamPanic {
+			return
+		}
 		if newAPIError == nil {
 			service.MarkRequestPolicySuccess(c, relayInfo.StreamStatus)
 			relayInfo.LastError = nil

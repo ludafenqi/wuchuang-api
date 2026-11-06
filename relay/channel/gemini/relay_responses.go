@@ -152,6 +152,9 @@ func GeminiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 		hostedBridge.Observe(geminiResponse)
 		return sendChunk(geminiResponse)
 	})
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		return usage, panicErr
+	}
 	if streamAPIError != nil {
 		if failResponsesStream(streamAPIError) && streamErr == nil {
 			return usage, nil

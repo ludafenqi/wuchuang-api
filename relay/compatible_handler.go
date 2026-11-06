@@ -169,7 +169,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	}
 
 	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
-	if newApiErr != nil {
+	if newApiErr != nil && !info.StreamStatus.HasPanicUsage(usage, newApiErr) {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
 		return newApiErr
@@ -183,5 +183,6 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	} else {
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
-	return nil
+	info.StreamStatus.MarkPanicUsageHandled()
+	return newApiErr
 }

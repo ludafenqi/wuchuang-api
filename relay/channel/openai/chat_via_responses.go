@@ -310,6 +310,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	if streamErr != nil {
 		if !upstreamFailed || state.UsageText() == "" {
+			if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+				return nil, panicErr
+			}
 			return nil, streamErr
 		}
 		// The upstream failed after output reached the client: bill the
@@ -338,6 +341,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 				usage.BillingUsage = dto.CloneBillingUsageWithEstimatedCompletion(usage.BillingUsage, usage.CompletionTokens)
 			}
 		}
+		if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+			return usage, panicErr
+		}
 		logger.LogError(c, common.LogText("responses stream failed after output was delivered, billing the delivered output: %s", streamErr.Error()))
 		streamErr.SetMessage(common.MessageWithRequestId(streamErr.Error(), c.GetString(common.RequestIdKey)))
 		if info.RelayFormat == types.RelayFormatClaude {
@@ -352,6 +358,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	if usage == nil || usage.TotalTokens == 0 {
 		usage = service.ResponseText2Usage(c, state.UsageText(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		state.SetUsage(usage)
+	}
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		return usage, panicErr
 	}
 	if info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
 		return usage, nil

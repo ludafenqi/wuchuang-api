@@ -51,11 +51,17 @@ func WssHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, nil, info)
-	if newAPIError != nil {
+	realtimeUsage, hasUsage := usage.(*dto.RealtimeUsage)
+	panicUsage := newAPIError != nil && newAPIError.GetErrorCode() == relaycommon.StreamPanicErrorCode &&
+		info.StreamStatus.PanicError() != nil && hasUsage && realtimeUsage != nil
+	if newAPIError != nil && !panicUsage {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
 	}
 	service.PostWssConsumeQuota(c, info, info.UpstreamModelName, usage.(*dto.RealtimeUsage), nil)
-	return nil
+	if panicUsage {
+		info.StreamStatus.MarkPanicUsageHandled()
+	}
+	return newAPIError
 }

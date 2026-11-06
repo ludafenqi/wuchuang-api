@@ -2,6 +2,7 @@ package helper
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -20,6 +22,169 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type streamCredentialPanic struct{ formatted *atomic.Bool }
+
+func (p streamCredentialPanic) Error() string {
+	p.formatted.Store(true)
+	return "ROUND10_STREAM_SECRET"
+}
+func (p streamCredentialPanic) String() string {
+	p.formatted.Store(true)
+	return "ROUND10_STREAM_SECRET"
+}
+
+type streamPanicBody struct {
+	reader    io.Reader
+	closed    chan struct{}
+	once      sync.Once
+	readPanic any
+}
+
+func (b *streamPanicBody) Read(p []byte) (int, error) {
+	if b.readPanic != nil {
+		panic(b.readPanic)
+	}
+	n, err := b.reader.Read(p)
+	if err == io.EOF {
+		<-b.closed
+	}
+	return n, err
+}
+func (b *streamPanicBody) Close() error { b.once.Do(func() { close(b.closed) }); return nil }
+
+func TestStreamScannerPanicSafety(t *testing.T) {
+	previous := operation_setting.GetGeneralSetting().PingIntervalEnabled
+	operation_setting.GetGeneralSetting().PingIntervalEnabled = false
+	t.Cleanup(func() { operation_setting.GetGeneralSetting().PingIntervalEnabled = previous })
+	for _, scenario := range []string{"read", "handler", "done before handler panic"} {
+		t.Run(scenario, func(t *testing.T) {
+			var formatted atomic.Bool
+			body := &streamPanicBody{reader: strings.NewReader("data: chunk\n\n"), closed: make(chan struct{})}
+			if scenario == "read" {
+				body.readPanic = streamCredentialPanic{&formatted}
+			}
+			if scenario == "done before handler panic" {
+				body.reader = strings.NewReader("data: chunk\n\ndata: [DONE]\n\n")
+			}
+			c, resp, info := setupStreamTest(t, body)
+			resp.Body = body
+			var output bytes.Buffer
+			common.LogWriterMu.Lock()
+			previousWriter := gin.DefaultErrorWriter
+			gin.DefaultErrorWriter = &output
+			common.LogWriterMu.Unlock()
+			t.Cleanup(func() {
+				common.LogWriterMu.Lock()
+				gin.DefaultErrorWriter = previousWriter
+				common.LogWriterMu.Unlock()
+			})
+			StreamScannerHandler(c, resp, info, func(_ string, _ *StreamResult) {
+				if scenario == "done before handler panic" {
+					<-body.closed
+				}
+				panic(streamCredentialPanic{&formatted})
+			})
+			select {
+			case <-body.closed:
+			default:
+				assert.Fail(t, "upstream body must close before return")
+			}
+			assert.False(t, formatted.Load(), "raw panic Error must never execute")
+			assert.Equal(t, relaycommon.StreamEndReasonPanic, info.StreamStatus.EndReason)
+			assert.Equal(t, "failed", info.StreamStatus.ResponseOutcome())
+			assert.False(t, info.StreamStatus.IsNormalEnd())
+			require.Error(t, info.StreamStatus.EndError)
+			assert.NotContains(t, info.StreamStatus.EndError.Error(), "ROUND10_STREAM_SECRET")
+			assert.NotContains(t, info.StreamStatus.Summary(), "ROUND10_STREAM_SECRET")
+			assert.NotContains(t, output.String(), "ROUND10_STREAM_SECRET")
+			assert.Contains(t, output.String(), "[ERR]")
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+			assert.Equal(t, relaycommon.StreamEndReasonPanic, info.StreamStatus.EndReason, "late EOF cannot erase the joined panic failure")
+		})
+	}
+}
+
+type scannerPanicWriter struct {
+	gin.ResponseWriter
+	operation string
+	value     any
+}
+
+func (w *scannerPanicWriter) Write(p []byte) (int, error) {
+	if w.operation == "write" || w.operation == "ping" && strings.Contains(string(p), "PING") {
+		panic(w.value)
+	}
+	return w.ResponseWriter.Write(p)
+}
+func (w *scannerPanicWriter) WriteString(s string) (int, error) { return w.Write([]byte(s)) }
+func (w *scannerPanicWriter) Flush() {
+	if w.operation == "flush" {
+		panic(w.value)
+	}
+	w.ResponseWriter.Flush()
+}
+
+type panicDiagnosticWriter struct{}
+
+func (panicDiagnosticWriter) Write([]byte) (int, error) { panic("ROUND10_DIAGNOSTIC_SECRET") }
+
+func TestStreamScannerPanicIO(t *testing.T) {
+	settings := operation_setting.GetGeneralSetting()
+	oldPing, oldInterval, oldDebug := settings.PingIntervalEnabled, settings.PingIntervalSeconds, common.DebugEnabled
+	t.Cleanup(func() {
+		settings.PingIntervalEnabled = oldPing
+		settings.PingIntervalSeconds = oldInterval
+		common.DebugEnabled = oldDebug
+	})
+	common.DebugEnabled = false
+	for _, operation := range []string{"write", "flush", "ping", "diagnostic"} {
+		t.Run(operation, func(t *testing.T) {
+			settings.PingIntervalEnabled = operation == "ping"
+			settings.PingIntervalSeconds = 1
+			var formatted atomic.Bool
+			var logs bytes.Buffer
+			common.LogWriterMu.Lock()
+			previousWriter := gin.DefaultErrorWriter
+			gin.DefaultErrorWriter = &logs
+			if operation == "diagnostic" {
+				gin.DefaultErrorWriter = panicDiagnosticWriter{}
+			}
+			common.LogWriterMu.Unlock()
+			t.Cleanup(func() {
+				common.LogWriterMu.Lock()
+				gin.DefaultErrorWriter = previousWriter
+				common.LogWriterMu.Unlock()
+			})
+			input := "data: partial\n\n"
+			if operation == "ping" {
+				input = ""
+			}
+			body := &streamPanicBody{reader: strings.NewReader(input), closed: make(chan struct{})}
+			c, resp, info := setupStreamTest(t, body)
+			resp.Body = body
+			c.Writer = &scannerPanicWriter{ResponseWriter: c.Writer, operation: operation, value: streamCredentialPanic{&formatted}}
+			StreamScannerHandler(c, resp, info, func(data string, sr *StreamResult) {
+				if operation == "diagnostic" {
+					panic(streamCredentialPanic{&formatted})
+				}
+				if err := StringData(c, data); err != nil {
+					sr.Stop(err)
+				}
+			})
+			select {
+			case <-body.closed:
+			default:
+				assert.Fail(t, "body did not close")
+			}
+			assert.False(t, formatted.Load())
+			assert.Equal(t, relaycommon.StreamEndReasonPanic, info.StreamStatus.EndReason)
+			assert.Equal(t, "failed", info.StreamStatus.ResponseOutcome())
+			assert.NotContains(t, info.StreamStatus.Summary(), "ROUND10_")
+			assert.NotContains(t, logs.String(), "ROUND10_")
+		})
+	}
+}
 
 type headerCommitWriter struct {
 	*httptest.ResponseRecorder

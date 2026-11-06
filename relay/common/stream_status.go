@@ -1,11 +1,20 @@
 package common
 
 import (
+	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 )
+
+const StreamPanicErrorCode types.ErrorCode = "stream_panic"
+
+var errStreamPanic = errors.New("stream processing failed")
 
 type StreamEndReason string
 
@@ -45,9 +54,12 @@ type StreamStatus struct {
 	EndError  error
 	endOnce   sync.Once
 
-	mu         sync.Mutex
-	Errors     []StreamErrorEntry
-	ErrorCount int
+	mu                sync.Mutex
+	panicked          bool
+	panicFinalized    bool
+	panicUsageHandled bool
+	Errors            []StreamErrorEntry
+	ErrorCount        int
 
 	response         ResponseOutcome
 	errorCode        string
@@ -78,10 +90,95 @@ func (s *StreamStatus) SetEndReason(reason StreamEndReason, err error) {
 	if s == nil {
 		return
 	}
+	if reason == StreamEndReasonPanic {
+		s.MarkPanic()
+		s.FinalizePanic()
+		return
+	}
 	s.endOnce.Do(func() {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.panicFinalized {
+			return
+		}
 		s.EndReason = reason
 		s.EndError = err
 	})
+}
+
+// MarkPanic wins over a scanner EOF or completion racing with its callback.
+// No recovered value is accepted or retained in the public stream state.
+func (s *StreamStatus) MarkPanic() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.panicked = true
+	s.EndError = errStreamPanic
+	s.response, s.errorCode, s.errorType, s.errorStatus = ResponseOutcomeFailed, string(StreamPanicErrorCode), "new_api_error", http.StatusInternalServerError
+}
+
+// FinalizePanic is called after the scanner joins every worker. Until then the
+// original transport reason remains available to callback error handling (for
+// example a failed downstream flush); the panic failure fact already wins over
+// protocol completion. No callback may turn that fact back into success.
+func (s *StreamStatus) FinalizePanic() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.panicked {
+		s.panicFinalized = true
+		s.EndReason, s.EndError = StreamEndReasonPanic, errStreamPanic
+	}
+}
+
+func (s *StreamStatus) PanicError() *types.NewAPIError {
+	if s == nil {
+		return nil
+	}
+	s.mu.Lock()
+	panicked := s.panicked
+	s.mu.Unlock()
+	if !panicked {
+		return nil
+	}
+	return types.WithOpenAIError(types.OpenAIError{
+		Message: "Internal server error. Please submit a issue here: https://github.com/Calcium-Ion/new-api",
+		Type:    "new_api_panic", Code: string(StreamPanicErrorCode),
+	}, http.StatusInternalServerError, types.ErrOptionWithSkipRetry())
+}
+
+// HasPanicUsage only admits a locally observed panic carrying the usage that
+// the adaptor used to return with nil error. An upstream error code is not proof.
+func (s *StreamStatus) HasPanicUsage(usage any, apiErr *types.NewAPIError) bool {
+	parsed, ok := usage.(*dto.Usage)
+	return ok && parsed != nil && apiErr != nil && apiErr.GetErrorCode() == StreamPanicErrorCode && s.PanicError() != nil
+}
+
+// This marks the original accounting call being attempted, not a durable commit.
+// A protocol failure must not add a refund to a former successful-return path,
+// including when the existing settlement call only logs a funding/Token error.
+func (s *StreamStatus) MarkPanicUsageHandled() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.panicked {
+		s.panicUsageHandled = true
+	}
+}
+
+func (s *StreamStatus) PanicUsageHandled() bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.panicked && s.panicUsageHandled
 }
 
 func (s *StreamStatus) RecordError(msg string) {
@@ -145,6 +242,9 @@ func (s *StreamStatus) MarkFailed(code, errorType string, status int) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.panicked {
+		return
+	}
 	s.response = ResponseOutcomeFailed
 	if code != "" {
 		s.errorCode = code
@@ -210,6 +310,11 @@ func (s *StreamStatus) IsNormalEnd() bool {
 	if s == nil {
 		return true
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.panicked {
+		return false
+	}
 	return s.EndReason == StreamEndReasonDone ||
 		s.EndReason == StreamEndReasonEOF ||
 		s.EndReason == StreamEndReasonHandlerStop
@@ -219,15 +324,15 @@ func (s *StreamStatus) Summary() string {
 	if s == nil {
 		return "StreamStatus<nil>"
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	b := &strings.Builder{}
 	fmt.Fprintf(b, "reason=%s", s.EndReason)
 	if s.EndError != nil {
 		fmt.Fprintf(b, " end_error=%q", s.EndError.Error())
 	}
-	s.mu.Lock()
 	if s.ErrorCount > 0 {
 		fmt.Fprintf(b, " soft_errors=%d", s.ErrorCount)
 	}
-	s.mu.Unlock()
 	return b.String()
 }

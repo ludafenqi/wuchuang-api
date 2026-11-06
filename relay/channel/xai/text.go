@@ -74,9 +74,11 @@ func xAIStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 		usage.CompletionTokens += toolCount * 7
 	}
 
-	helper.Done(c)
+	if info.StreamStatus.PanicError() == nil {
+		helper.Done(c)
+	}
 	service.CloseResponseBodyGracefully(resp)
-	return usage, nil
+	return usage, info.StreamStatus.PanicError()
 }
 
 func xAIHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {

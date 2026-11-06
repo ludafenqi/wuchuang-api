@@ -62,7 +62,7 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
-	if newAPIError != nil {
+	if newAPIError != nil && !info.StreamStatus.HasPanicUsage(usage, newAPIError) {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
@@ -73,5 +73,6 @@ func AudioHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
 
-	return nil
+	info.StreamStatus.MarkPanicUsageHandled()
+	return newAPIError
 }

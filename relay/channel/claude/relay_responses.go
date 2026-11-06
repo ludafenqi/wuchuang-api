@@ -158,6 +158,12 @@ func ClaudeResponsesStreamHandler(c *gin.Context, resp *http.Response, info *rel
 			}
 		}
 	})
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		if streamErr != nil {
+			return nil, panicErr
+		}
+		return claudeInfo.Usage, panicErr
+	}
 	if streamErr != nil {
 		return nil, streamErr
 	}

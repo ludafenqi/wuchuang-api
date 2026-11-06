@@ -182,6 +182,9 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	})
 
 	if streamErr != nil {
+		if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+			return nil, panicErr
+		}
 		return nil, streamErr
 	}
 
@@ -195,6 +198,9 @@ func OaiChatToResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	if noUpstreamUsage {
 		usage = service.ResponseText2Usage(c, state.UsageText(), info.UpstreamModelName, info.GetEstimatePromptTokens())
 		state.SetUsage(usage)
+	}
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		return usage, panicErr
 	}
 	if info.StreamStatus.EndReason == relaycommon.StreamEndReasonClientGone {
 		return usage, nil
