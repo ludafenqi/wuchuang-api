@@ -24,7 +24,7 @@ export function updateReviewBody(previous, generated) {
   return previous.slice(0, first) + generated + previous.slice(last + end.length);
 }
 
-export function refreshUpstreamReview({ run, env, pin }) {
+export function refreshUpstreamReview({ run, env, pin, wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }) {
   const repo = env.GITHUB_REPOSITORY;
   assert.match(repo, /^[\w.-]+\/[\w.-]+$/);
   assert.match(env.GITHUB_RUN_ID, /^\d+$/);
@@ -72,7 +72,7 @@ ${end}`;
       "--base",
       "main",
       "--json",
-      "number,body,isDraft,autoMergeRequest",
+      "number,body,isDraft,autoMergeRequest,headRefOid",
     ]),
   );
   assert.ok(open.length <= 1, "Multiple open upstream sync PRs");
@@ -115,7 +115,9 @@ ${end}`;
   let previous = "";
   if (existing) {
     // Read notes again after the push so notes added during validation survive.
-    const current = JSON.parse(
+    let current;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      current = JSON.parse(
       run("gh", [
         "pr",
         "view",
@@ -125,7 +127,16 @@ ${end}`;
         "--json",
         "body,isDraft,headRefOid,autoMergeRequest",
       ]),
-    );
+      );
+      if (current.headRefOid === candidate) break;
+      // GitHub's PR projection can briefly lag the branch push. Accept only
+      // the known previous PR head, and prove that the actual branch still
+      // points at our tested commit before waiting for that projection.
+      assert.equal(current.headRefOid, existing.headRefOid, "Sync PR head changed concurrently");
+      const remoteHead = run("git", ["ls-remote", "origin", "refs/heads/automation/upstream-sync"]).trim().split(/\s+/)[0];
+      assert.equal(remoteHead, candidate, "Sync branch changed concurrently");
+      if (attempt < 4) wait((attempt + 1) * 1000);
+    }
     assert.equal(current.headRefOid, candidate, "Sync PR head changed concurrently");
     assert.equal(current.isDraft, true, "Sync PR must remain a draft");
     assert.equal(current.autoMergeRequest, null, "Sync PR must not auto-merge");
