@@ -54,7 +54,7 @@ func refundDatabase(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		require.NoError(t, database.Where("request_id IN ?", []string{"refund-a", "refund-b"}).Delete(&SubscriptionPreConsumeRecord{}).Error)
 		require.NoError(t, database.Where("id = ?", 81).Delete(&UserSubscription{}).Error)
-		require.NoError(t, database.Where("id = ?", 81).Delete(&Token{}).Error)
+		require.NoError(t, database.Unscoped().Where("id = ?", 81).Delete(&Token{}).Error)
 		require.NoError(t, database.Unscoped().Where("id = ?", 81).Delete(&User{}).Error)
 	})
 	require.NoError(t, database.Create(&User{Id: 81, Username: "refund-owner", Quota: 10000, UsedQuota: 3000, RequestCount: 3}).Error)
