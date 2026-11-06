@@ -3,9 +3,12 @@ package controller
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,10 +35,17 @@ type nativeRouteBilling struct {
 	preConsumed int
 	userID      int
 	settled     bool
+	reserveErr  error
 }
 
-func (b *nativeRouteBilling) Settle(int) error {
+// Settle charges what the reservation did not cover.
+func (b *nativeRouteBilling) Settle(quota int) error {
 	b.events = append(b.events, "settle")
+	if quota > b.preConsumed {
+		if err := model.DecreaseUserQuota(b.userID, quota-b.preConsumed, true); err != nil {
+			return err
+		}
+	}
 	b.settled = true
 	return nil
 }
@@ -58,6 +68,9 @@ func (b *nativeRouteBilling) GetPreConsumedQuota() int {
 
 func (b *nativeRouteBilling) Reserve(quota int) error {
 	b.events = append(b.events, "reserve")
+	if b.reserveErr != nil {
+		return b.reserveErr
+	}
 	if err := model.DecreaseUserQuota(b.userID, quota, true); err != nil {
 		return err
 	}
@@ -254,28 +267,56 @@ func TestKlingNativeRouteSubmitPollSettleAndQuery(t *testing.T) {
 // and is never refunded. A stream Ark finished bills the images it delivered;
 // one that broke off, whose first event the plugin could not read, or that
 // kept sending keep-alive comments until the submission deadline bills the
-// reserved images.
+// reserved images. A finished stream stays billed and logged when the host
+// then fails to reserve its images or to store the task.
 func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	service.InitHttpClient()
 
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
+	previousType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	previousMaster, previousSQLite := common.IsMasterNode, common.SQLitePath
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.SetDatabaseTypes(previousType, previousLogType)
+		common.IsMasterNode, common.SQLitePath = previousMaster, previousSQLite
+	})
+	t.Setenv("SQL_DSN", os.Getenv("TEST_TASK_SQL_DSN"))
+	t.Setenv("LOG_SQL_DSN", "")
+	common.IsMasterNode = false
+	common.SQLitePath = filepath.Join(t.TempDir(), "relayed-stream.db")
+	require.NoError(t, model.InitDB())
+	database := model.DB
+	sqlDB, err := database.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
 	previousMemoryCache := common.MemoryCacheEnabled
 	previousBatchUpdate := common.BatchUpdateEnabled
 	previousLogConsume := common.LogConsumeEnabled
 	previousRedisEnabled := common.RedisEnabled
 	previousDeadline := constant.TaskPluginProtocolTimeoutSeconds
-	database, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
 	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Channel{}, &model.Task{}, &model.Log{}))
 	model.DB = database
 	model.LOG_DB = database
 	common.MemoryCacheEnabled = false
 	common.BatchUpdateEnabled = false
-	common.LogConsumeEnabled = false
+	common.LogConsumeEnabled = true
 	common.RedisEnabled = false
 	constant.TaskPluginProtocolTimeoutSeconds = 1
+	versionQuery := "SELECT VERSION()"
+	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+		versionQuery = "SELECT sqlite_version()"
+	}
+	var version string
+	require.NoError(t, database.Raw(versionQuery).Scan(&version).Error)
+	t.Logf("database=%s version=%s", common.MainDatabaseType(), version)
+	var failTaskInsert atomic.Bool
+	require.NoError(t, database.Callback().Create().Before("gorm:create").Register("test:fail_task_insert", func(tx *gorm.DB) {
+		if failTaskInsert.Load() && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Task" {
+			_ = tx.AddError(errors.New("injected task insert failure"))
+		}
+	}))
 	const seedream = "doubao-seedream-5-0-lite-260128"
 	previousPrices := ratio_setting.ModelPrice2JSONString()
 	// 10,000 quota per image.
@@ -305,7 +346,7 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 			w.(http.Flusher).Flush()
 		}
 		switch request.Prompt {
-		case "finished":
+		case "finished", "reserve_fails", "insert_fails":
 			write(image + completed + "data: [DONE]\n\n")
 		case "broken":
 			write(image)
@@ -345,8 +386,15 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 		{"broken", image, 30_000},
 		{"unreadable", "data: {\"type\":\n\n", 30_000},
 		{"stalled", image, 30_000},
+		// Ark finished these streams, then the host could not reserve the
+		// billed images or store the task.
+		{"reserve_fails", image, 10_000},
+		{"insert_fails", image, 10_000},
 	} {
 		t.Run(tc.prompt, func(t *testing.T) {
+			require.NoError(t, database.Model(&model.User{}).Where("id = ?", 7).Update("quota", 1_000_000).Error)
+			require.NoError(t, database.Where("type = ?", model.LogTypeConsume).Delete(&model.Log{}).Error)
+			failTaskInsert.Store(tc.prompt == "insert_fails")
 			recorder := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(recorder)
 			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/images/generations", strings.NewReader(`{"model":"`+seedream+`","prompt":"`+tc.prompt+`","stream":true,`+
@@ -362,21 +410,37 @@ func TestDoubaoRelayedImageStreamSettlement(t *testing.T) {
 			require.False(t, c.IsAborted(), recorder.Body.String())
 			require.Nil(t, middleware.SetupContextForSelectedChannel(c, &channel, seedream))
 			billing := &nativeRouteBilling{userID: 7}
+			if tc.prompt == "reserve_fails" {
+				billing.reserveErr = errors.New("token quota is not enough")
+			}
 			relayInfo := &relaycommon.RelayInfo{UserId: 7, UserGroup: "default", UsingGroup: "default", UserQuota: 1_000_000, TokenGroup: "default",
 				OriginModelName: seedream, Billing: billing,
 				TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: c.GetString("task_action"), PublicTaskID: "task_" + tc.prompt, LockedChannel: &channel}}
 
 			started := time.Now()
 			outcome, taskErr := executeTaskSubmissionWith(c, relayInfo, relay.RelayTaskSubmit)
-			require.Nil(t, taskErr)
 			assert.Less(t, time.Since(started), 10*time.Second, "the submission deadline bounds a relayed stream")
 			assert.Equal(t, []string{"reserve", "settle"}, billing.events, "a relayed stream is never refunded")
-			assert.Equal(t, tc.wantQuota, outcome.Task.Quota)
-			assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), outcome.Task.Status)
 			assert.True(t, strings.HasPrefix(recorder.Body.String(), tc.firstFrame), recorder.Body.String())
 			relayed := recorder.Body.String()
-			presentTaskSubmission(c, outcome)
+			if tc.prompt == "insert_fails" {
+				require.NotNil(t, taskErr)
+				assert.Equal(t, "task_insert_failed", taskErr.Code)
+				respondTaskSubmissionError(c, taskErr)
+			} else {
+				require.Nil(t, taskErr)
+				assert.Equal(t, tc.wantQuota, outcome.Task.Quota)
+				assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), outcome.Task.Status)
+				presentTaskSubmission(c, outcome)
+			}
 			assert.Equal(t, relayed, recorder.Body.String(), "nothing follows the relayed events")
+			var user model.User
+			require.NoError(t, database.First(&user, 7).Error)
+			assert.Equal(t, 1_000_000-tc.wantQuota, user.Quota, "the delivered images are charged")
+			var consumeLogs []model.Log
+			require.NoError(t, database.Where("type = ?", model.LogTypeConsume).Find(&consumeLogs).Error)
+			require.Len(t, consumeLogs, 1)
+			assert.Equal(t, tc.wantQuota, consumeLogs[0].Quota)
 		})
 	}
 }

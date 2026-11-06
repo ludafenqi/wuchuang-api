@@ -2960,6 +2960,114 @@ test('a New API channel binds upstream task plugins and publishes their models',
 })
 
 test.each([
+  { saved: 'v1', next: 'v1beta1', interaction: 'click' },
+  { saved: 'v1beta1', next: 'v1', interaction: 'keyboard' },
+] as const)(
+  'Vertex endpoint $interaction changes $saved to $next and restores it after saving and reopening',
+  async ({ saved, next, interaction }) => {
+    editingChannel = {
+      ...editingChannel,
+      type: 41,
+      other: '{"default":"global"}',
+      settings: JSON.stringify({
+        vertex_key_type: 'api_key',
+        vertex_project_id: 'test-project',
+        vertex_api_version: saved,
+      }),
+    }
+    const put = vi.spyOn(api, 'put').mockImplementation(async (_url, data) => {
+      const payload = data as { settings: string }
+      editingChannel = { ...editingChannel, settings: payload.settings }
+      return { data: { success: true } }
+    })
+    const user = userEvent.setup()
+    render(<ConfigurationHarness currentRow={editingChannel} />)
+    const toggle = await screen.findByRole('switch', {
+      name: 'Use Vertex AI v1beta1 endpoint',
+    })
+    await waitFor(() =>
+      expect(toggle).toHaveAttribute(
+        'aria-checked',
+        String(saved === 'v1beta1')
+      )
+    )
+
+    if (interaction === 'keyboard') {
+      act(() => toggle.focus())
+      expect(toggle).toHaveFocus()
+      await user.keyboard(' ')
+    } else {
+      await user.click(toggle)
+    }
+    expect(toggle).toHaveAttribute('aria-checked', String(next === 'v1beta1'))
+    await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+    await waitFor(() => expect(put).toHaveBeenCalled())
+    const payload = put.mock.calls[0]?.[1] as { settings: string }
+    expect(JSON.parse(payload.settings)).toMatchObject({
+      vertex_key_type: 'api_key',
+      vertex_project_id: 'test-project',
+      vertex_api_version: next,
+    })
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Open channel' }))
+    const reopened = await screen.findByRole('switch', {
+      name: 'Use Vertex AI v1beta1 endpoint',
+    })
+    await waitFor(() =>
+      expect(reopened).toHaveAttribute(
+        'aria-checked',
+        String(next === 'v1beta1')
+      )
+    )
+  }
+)
+
+test('Vertex endpoint remains unchanged and is omitted from updates without sensitive write permission', async () => {
+  editingChannel = {
+    ...editingChannel,
+    type: 41,
+    other: '{"default":"global"}',
+    settings: JSON.stringify({
+      vertex_key_type: 'api_key',
+      vertex_api_version: 'v1beta1',
+    }),
+  }
+  useAuthStore.setState({
+    auth: {
+      ...originalAuth,
+      user: {
+        id: 10,
+        username: 'operator',
+        role: ROLE.ADMIN,
+        permissions: {
+          admin_permissions: { channel: { read: true, write: true } },
+        },
+      },
+    },
+  })
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  const toggle = await screen.findByRole('switch', {
+    name: 'Use Vertex AI v1beta1 endpoint',
+  })
+  await waitFor(() => expect(toggle).toBeChecked())
+  expect(toggle).toHaveAttribute('aria-disabled', 'true')
+  await user.click(toggle)
+  expect(toggle).toBeChecked()
+
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  expect(put.mock.calls[0]?.[1]).toMatchObject({ id: 42 })
+  expect(put.mock.calls[0]?.[1]).not.toHaveProperty('settings')
+})
+
+test.each([
   {
     saved: undefined,
     shown: 'InvokeModel (legacy)',
