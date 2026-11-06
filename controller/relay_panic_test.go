@@ -59,8 +59,18 @@ func relayPanicDatabase(t *testing.T) *gorm.DB {
 		engine = "mysql"
 	}
 	database := modelManagementDB(t, engine, dsn)
+	logDatabase, _ := newAuditTestDatabase(t, engine, dsn)
+	model.LOG_DB = logDatabase
 	previousBatch, previousConsume, previousExport := common.BatchUpdateEnabled, common.LogConsumeEnabled, common.DataExportEnabled
-	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}, &model.Log{}))
+	require.NoError(t, database.AutoMigrate(&model.User{}, &model.Token{}, &model.Channel{}, &model.Ability{}))
+	require.NoError(t, logDatabase.AutoMigrate(&model.Log{}))
+	versionQuery := "SELECT version()"
+	if engine == "sqlite" {
+		versionQuery = "SELECT sqlite_version()"
+	}
+	var logVersion string
+	require.NoError(t, logDatabase.Raw(versionQuery).Scan(&logVersion).Error)
+	t.Logf("independent %s consume-log database: %s", engine, logVersion)
 	common.BatchUpdateEnabled, common.LogConsumeEnabled, common.DataExportEnabled = false, true, false
 	t.Cleanup(func() {
 		common.BatchUpdateEnabled, common.LogConsumeEnabled, common.DataExportEnabled = previousBatch, previousConsume, previousExport
@@ -127,7 +137,7 @@ func TestRelayPanicPreservesAccounting(t *testing.T) {
 				}
 			}))
 			if scenario == "settled" {
-				require.NoError(t, database.Callback().Create().After("gorm:commit_or_rollback_transaction").Register("round8:after-settle", func(tx *gorm.DB) {
+				require.NoError(t, model.LOG_DB.Callback().Create().After("gorm:commit_or_rollback_transaction").Register("round8:after-settle", func(tx *gorm.DB) {
 					if tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Log" {
 						panic(relaySecretPanic{formatted: &formatted})
 					}
@@ -179,7 +189,7 @@ func TestRelayPanicPreservesAccounting(t *testing.T) {
 			require.NoError(t, database.First(&user, 82).Error)
 			require.NoError(t, database.First(&token, 82).Error)
 			require.NoError(t, database.First(&channel, 82).Error)
-			require.NoError(t, database.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&logCount).Error)
+			require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ?", model.LogTypeConsume).Count(&logCount).Error)
 			wantQuota, wantUsed, wantRequests, wantRefunds, wantLogs := 10000, 0, 0, int32(1), int64(0)
 			if scenario == "zero pre-consume" {
 				wantRefunds = 0
@@ -305,7 +315,7 @@ func TestRelayStreamPanicPreservesUsageSettlement(t *testing.T) {
 			require.NoError(t, database.First(&user, 82).Error)
 			require.NoError(t, database.First(&token, 82).Error)
 			require.NoError(t, database.First(&channel, 82).Error)
-			require.NoError(t, database.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
+			require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
 			assert.Equal(t, 9500, user.Quota)
 			assert.Equal(t, 9500, token.RemainQuota)
 			assert.Equal(t, 500, user.UsedQuota)
@@ -448,7 +458,7 @@ func TestRealtimePanicPreservesActualAccounting(t *testing.T) {
 			require.NoError(t, db.First(&user, 82).Error)
 			require.NoError(t, db.First(&token, 82).Error)
 			require.NoError(t, db.First(&channel, 82).Error)
-			require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
+			require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
 			balance, used, requests := 9988, 12, 1
 			if scenario == "two responses" {
 				balance, used = 9976, 24
@@ -558,7 +568,7 @@ func TestKeepAlivePanicPreservesReservationBoundary(t *testing.T) {
 			var records []model.Log
 			require.NoError(t, db.First(&user, 82).Error)
 			require.NoError(t, db.First(&token, 82).Error)
-			require.NoError(t, db.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
+			require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
 			assert.Equal(t, 10000, user.Quota)
 			assert.Equal(t, 10000, token.RemainQuota)
 			assert.Zero(t, user.UsedQuota)

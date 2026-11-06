@@ -119,7 +119,7 @@ jobs:
       - name: Verify auth cache operations on a real six-node Redis Cluster
         run: bash .github/scripts/verify-redis-cluster.sh
 
-      - name: Verify relay failure accounting on three real databases
+      - name: Verify relay failure accounting with independent logs on three real databases
         shell: bash
         run: |
           set -euo pipefail
