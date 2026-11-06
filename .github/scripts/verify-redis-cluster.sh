@@ -37,6 +37,18 @@ for attempt in {1..30}; do
   sleep 1
 done
 "$ready"
+ready=false
+for attempt in {1..30}; do
+  # cluster_state:ok only proves slot coverage. Replicas become visible in
+  # CLUSTER SLOTS after their initial synchronization, so wait for all six IDs.
+  if docker exec "${containers[0]}" redis-cli -p 7000 --json cluster slots | \
+    node -e 'const slots=JSON.parse(require("node:fs").readFileSync(0,"utf8"));process.exit(new Set(slots.flatMap(slot=>slot.slice(2).map(node=>node[2]))).size>=6?0:1)'; then
+    ready=true
+    break
+  fi
+  sleep 1
+done
+"$ready"
 docker exec "${containers[0]}" redis-cli -p 7000 info server | grep redis_version
 docker exec "${containers[0]}" redis-cli -p 7000 cluster nodes
 TEST_AUTH_REDIS_CLUSTER_ADDRS="$(IFS=,; echo "${addresses[*]}")" \
