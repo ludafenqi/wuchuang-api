@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -117,6 +116,13 @@ func (w *streamResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
+func recoverStreamPanic(c *gin.Context, status *relaycommon.StreamStatus, origin string) {
+	if value := recover(); value != nil {
+		status.MarkPanic()
+		logger.LogPanic(c, value, origin)
+	}
+}
+
 func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, dataHandler func(data string, sr *StreamResult)) {
 
 	if resp == nil || dataHandler == nil {
@@ -131,6 +137,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	// 无条件新建 StreamStatus
 	info.StreamStatus = relaycommon.NewStreamStatus()
+	common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, info.StreamStatus)
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -175,7 +182,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 			cancel()
 			stop()
 			if resp.Body != nil {
-				_ = resp.Body.Close()
+				func() {
+					defer recoverStreamPanic(c, info.StreamStatus, "stream close")
+					_ = resp.Body.Close()
+				}()
 			}
 
 			ticker.Stop()
@@ -199,15 +209,13 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	if pingEnabled && pingTicker != nil {
 		wg.Add(1)
 		gopool.Go(func() {
+			defer wg.Done()
 			defer func() {
-				if r := recover(); r != nil {
-					logger.LogError(c, common.LogText("ping goroutine panic: %v", r))
-					info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("ping panic: %v", r))
+				if info.StreamStatus.PanicError() != nil {
 					stop()
 				}
-				logger.LogDebug(c, "ping goroutine exited")
-				wg.Done()
 			}()
+			defer recoverStreamPanic(c, info.StreamStatus, "stream ping")
 
 			// 添加超时保护，防止 goroutine 无限运行
 			maxPingDuration := 30 * time.Minute // 最大 ping 持续时间
@@ -249,14 +257,9 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 
 	wg.Add(1)
 	gopool.Go(func() {
-		defer func() {
-			if r := recover(); r != nil {
-				logger.LogError(c, common.LogText("data handler goroutine panic: %v", r))
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("handler panic: %v", r))
-			}
-			stop()
-			wg.Done()
-		}()
+		defer wg.Done()
+		defer stop()
+		defer recoverStreamPanic(c, info.StreamStatus, "stream handler")
 		for data := range dataChan {
 			sr.reset()
 			func() {
@@ -273,16 +276,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	// Scanner goroutine with improved error handling
 	wg.Add(1)
 	common.RelayCtxGo(ctx, func() {
-		defer func() {
-			close(dataChan)
-			if r := recover(); r != nil {
-				logger.LogError(c, common.LogText("scanner goroutine panic: %v", r))
-				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonPanic, fmt.Errorf("scanner panic: %v", r))
-			}
-			stop()
-			logger.LogDebug(c, "scanner goroutine exited")
-			wg.Done()
-		}()
+		defer wg.Done()
+		defer stop()
+		defer close(dataChan)
+		defer recoverStreamPanic(c, info.StreamStatus, "stream scanner")
 
 		for scanner.Scan() {
 			// 检查是否需要停止
@@ -351,6 +348,10 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 	}
 
 	cleanup()
+	info.StreamStatus.FinalizePanic()
+	if info.StreamStatus.PanicError() != nil {
+		return
+	}
 	// All stream goroutines have joined. Done from a successfully delivered
 	// protocol completion can now correct a cancellation that won while its
 	// callback was still running. Bare EOF and failed writes never qualify.

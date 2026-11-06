@@ -72,7 +72,7 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 	}
 
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
-	if newAPIError != nil {
+	if newAPIError != nil && !info.StreamStatus.HasPanicUsage(usage, newAPIError) {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 		return newAPIError
@@ -90,14 +90,16 @@ func ResponsesHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *
 			return types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithSkipRetry(), types.ErrOptionWithStatusCode(http.StatusBadRequest))
 		}
 		service.PostTextConsumeQuota(c, info, usageDto, nil)
+		info.StreamStatus.MarkPanicUsageHandled()
 
 		info.OriginModelName = originModelName
 		info.PriceData = originPriceData
-		return nil
+		return newAPIError
 	}
 
 	ConsumeResponsesQuota(c, info, usageDto)
-	return nil
+	info.StreamStatus.MarkPanicUsageHandled()
+	return newAPIError
 }
 
 // ConsumeResponsesQuota applies the same settlement dispatch to HTTP and

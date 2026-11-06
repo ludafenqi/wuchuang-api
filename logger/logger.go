@@ -39,7 +39,9 @@ func GetCurrentLogPath() string {
 	return currentLogPath
 }
 
-func SetupLogger() {
+// SetupLogger returns the selected file for callers with a bounded lifetime.
+// Process-wide callers may leave it open; the next rotation closes it.
+func SetupLogger() io.Closer {
 	defer func() {
 		setupLogWorking = false
 	}()
@@ -47,7 +49,7 @@ func SetupLogger() {
 		ok := setupLogLock.TryLock()
 		if !ok {
 			log.Println(common.LogText("setup log is already working"))
-			return
+			return nil
 		}
 		defer func() {
 			setupLogLock.Unlock()
@@ -70,7 +72,9 @@ func SetupLogger() {
 			_ = oldFile.Close()
 		}
 		common.LogWriterMu.Unlock()
+		return fd
 	}
+	return nil
 }
 
 func LogInfo(ctx context.Context, msg string) {
@@ -105,12 +109,12 @@ func logHelper(ctx context.Context, level string, msg string) {
 	}
 	now := time.Now()
 	common.LogWriterMu.RLock()
+	defer common.LogWriterMu.RUnlock()
 	writer := gin.DefaultErrorWriter
 	if level == loggerINFO {
 		writer = gin.DefaultWriter
 	}
 	_, _ = fmt.Fprintf(writer, "[%s] %v | %s | %s \n", level, now.Format("2006/01/02 - 15:04:05"), id, msg)
-	common.LogWriterMu.RUnlock()
 	logCount++ // we don't need accurate count, so no lock here
 	if logCount > maxLogCount && !setupLogWorking {
 		logCount = 0

@@ -55,6 +55,105 @@ func TestAdaptorUsesExactRouteAndQueryAuth(t *testing.T) {
 	assert.Equal(t, "sk-test", parsedURL.Query().Get("api_key"))
 }
 
+func TestAdaptorProtectsCustomQueryAuthLogsWithoutChangingRequests(t *testing.T) {
+	previousMode, previousDebug := gin.Mode(), common.DebugEnabled
+	common.LogWriterMu.Lock()
+	previousWriter := gin.DefaultErrorWriter
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+		common.DebugEnabled = previousDebug
+		common.LogWriterMu.Lock()
+		gin.DefaultErrorWriter = previousWriter
+		common.LogWriterMu.Unlock()
+	})
+	common.DebugEnabled = true
+	for _, authName := range []string{"credential", "model"} {
+		for _, form := range []bool{false, true} {
+			for _, fail := range []bool{false, true} {
+				t.Run(fmt.Sprintf("auth=%s/form=%t/failure=%t", authName, form, fail), func(t *testing.T) {
+					type receivedRequest struct {
+						query, body, contentType, authorization string
+						err                                     error
+					}
+					received := make(chan receivedRequest, 2)
+					upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						body, err := io.ReadAll(r.Body)
+						received <- receivedRequest{r.URL.RawQuery, string(body), r.Header.Get("Content-Type"), r.Header.Get("Authorization"), err}
+						if fail {
+							conn, _, err := w.(http.Hijacker).Hijack()
+							if err == nil {
+								_ = conn.Close()
+							}
+							return
+						}
+						w.WriteHeader(http.StatusCreated)
+						_, _ = io.WriteString(w, "fixture response")
+					}))
+					defer upstream.Close()
+					info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{Routes: []dto.AdvancedCustomRoute{{
+						IncomingPath: "/v1/chat/completions", UpstreamPath: "/relay?alt=sse&api-version=2024-02-01&opaque=ROUND5_OPAQUE_SECRET", Converter: relayconvert.ConverterNone,
+						Auth: &dto.AdvancedCustomRouteAuth{Type: dto.AdvancedCustomAuthTypeQuery, Name: authName, Value: "prefix {api_key}:suffix"},
+					}}})
+					info.ApiKey, info.ChannelBaseUrl = "ROUND5_CHANNEL_SECRET", upstream.URL
+					ctx := advancedCustomGinContext("/v1/chat/completions")
+					body := `{"model":"fixture","prompt":"ROUND5_BODY_SECRET"}`
+					if form {
+						info.RelayMode = relayconstant.RelayModeAudioTranscription
+						ctx.Request.Header.Set("Content-Type", "multipart/form-data; boundary=round5")
+						body = "--round5\r\nContent-Disposition: form-data; name=\"prompt\"\r\n\r\nROUND5_BODY_SECRET\r\n--round5--\r\n"
+					}
+					adaptor := &Adaptor{}
+					originalURL, err := adaptor.GetRequestURL(info)
+					require.NoError(t, err)
+					parsedURL, err := url.Parse(originalURL)
+					require.NoError(t, err)
+					var output bytes.Buffer
+					common.LogWriterMu.Lock()
+					gin.DefaultErrorWriter = &output
+					common.LogWriterMu.Unlock()
+
+					response, err := adaptor.DoRequest(ctx, info, strings.NewReader(body))
+
+					if fail {
+						require.Error(t, err)
+						assert.Nil(t, response)
+						var apiError *types.NewAPIError
+						require.ErrorAs(t, err, &apiError)
+						assert.Equal(t, types.ErrorCodeDoRequestFailed, apiError.GetErrorCode())
+						assert.Equal(t, "upstream error: do request failed", apiError.ToOpenAIError().Message)
+						assert.Contains(t, output.String(), "EOF")
+					} else {
+						require.NoError(t, err)
+						httpResponse, ok := response.(*http.Response)
+						require.True(t, ok)
+						defer httpResponse.Body.Close()
+						assert.Equal(t, http.StatusCreated, httpResponse.StatusCode)
+						responseBody, err := io.ReadAll(httpResponse.Body)
+						require.NoError(t, err)
+						assert.Equal(t, "fixture response", string(responseBody))
+					}
+					require.Len(t, received, 1)
+					got := <-received
+					require.NoError(t, got.err)
+					assert.Equal(t, parsedURL.RawQuery, got.query)
+					assert.Equal(t, "prefix ROUND5_CHANNEL_SECRET:suffix", parsedURL.Query().Get(authName))
+					assert.Equal(t, body, got.body)
+					assert.Equal(t, ctx.Request.Header.Get("Content-Type"), got.contentType)
+					assert.Empty(t, got.authorization, "query authentication must not become header authentication")
+					assert.Contains(t, output.String(), "[DEBUG]")
+					assert.Contains(t, output.String(), "fullRequestURL:")
+					assert.Contains(t, output.String(), "alt=sse")
+					assert.Contains(t, output.String(), "api-version=2024-02-01")
+					for _, secret := range []string{"ROUND5_CHANNEL_SECRET", "ROUND5_OPAQUE_SECRET", "ROUND5_BODY_SECRET"} {
+						assert.NotContains(t, output.String(), secret)
+					}
+				})
+			}
+		}
+	}
+}
+
 // An absolute route sends the request to a host other than the channel base
 // URL, and a channel proxy is dialed before the upstream; a failed handshake
 // must hide both.

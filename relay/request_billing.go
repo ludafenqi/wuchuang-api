@@ -73,6 +73,9 @@ func RefundFailedRequestBilling(c *gin.Context, info *relaycommon.RelayInfo, api
 	if apiErr == nil {
 		return nil
 	}
+	if apiErr.GetErrorCode() == relaycommon.StreamPanicErrorCode && info.StreamStatus.PanicUsageHandled() {
+		return apiErr
+	}
 	apiErr = service.NormalizeViolationFeeError(apiErr)
 	if info.Billing != nil {
 		info.Billing.Refund(c)

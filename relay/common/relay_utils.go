@@ -37,24 +37,39 @@ func GetFullRequestURL(baseURL string, requestURL string, channelType int) strin
 	return fullRequestURL
 }
 
-func SanitizeURLForLog(rawURL string) string {
+func SanitizeURLForLog(rawURL string, sensitiveQueryKeys ...string) string {
 	if rawURL == "" {
 		return rawURL
 	}
 
 	parsedURL, err := url.Parse(rawURL)
 	if err != nil {
-		return rawURL
-	}
-
-	query := parsedURL.Query()
-	if len(query) == 0 {
-		return rawURL
+		return "[invalid URL]"
 	}
 
 	changed := false
+	if parsedURL.User != nil {
+		parsedURL.User = url.User("***masked***")
+		changed = true
+	}
+	if parsedURL.Fragment != "" {
+		parsedURL.Fragment, parsedURL.RawFragment = "", ""
+		changed = true
+	}
+	query, err := url.ParseQuery(parsedURL.RawQuery)
+	if err != nil {
+		// A partially parsed query can still carry malformed credentials.
+		parsedURL.RawQuery = "***masked***"
+		return parsedURL.String()
+	}
+
+	configuredSecrets := make(map[string]struct{}, len(sensitiveQueryKeys))
+	for _, key := range sensitiveQueryKeys {
+		configuredSecrets[strings.ToLower(strings.TrimSpace(key))] = struct{}{}
+	}
 	for key := range query {
-		if isSensitiveURLQueryKey(key) {
+		_, configuredSecret := configuredSecrets[strings.ToLower(strings.TrimSpace(key))]
+		if configuredSecret || isSensitiveURLQueryKey(key) {
 			query.Set(key, "***masked***")
 			changed = true
 		}
@@ -68,34 +83,14 @@ func SanitizeURLForLog(rawURL string) string {
 }
 
 func isSensitiveURLQueryKey(key string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(key))
-	switch normalized {
-	case "key",
-		"api_key",
-		"api-key",
-		"apikey",
-		"x-api-key",
-		"access_token",
-		"refresh_token",
-		"id_token",
-		"token",
-		"authorization",
-		"auth",
-		"client_secret",
-		"secret",
-		"password",
-		"passwd",
-		"signature",
-		"sig",
-		"awsaccesskeyid",
-		"x-amz-credential",
-		"x-amz-security-token",
-		"x-amz-signature":
+	// Unknown query values can be credentials under arbitrary provider names.
+	// Keep only common routing metadata; configured auth names override this.
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "api-version", "alt", "model":
+		return false
+	default:
 		return true
 	}
-	return strings.Contains(normalized, "token") ||
-		strings.Contains(normalized, "secret") ||
-		strings.Contains(normalized, "signature")
 }
 
 func GetAPIVersion(c *gin.Context) string {
