@@ -26,10 +26,30 @@ func TestAuthCacheRealRedisCluster(t *testing.T) {
 	if addresses == "" {
 		t.Skip("TEST_AUTH_REDIS_CLUSTER_ADDRS is not configured")
 	}
-	cluster := redis.NewClusterClient(&redis.ClusterOptions{Addrs: strings.Split(addresses, ",")})
+	cluster := redis.NewClient(&redis.Options{Addr: strings.Split(addresses, ",")[0]})
 	t.Cleanup(func() { assert.NoError(t, cluster.Close()) })
-	slots, err := cluster.ClusterSlots(t.Context()).Result()
+	// Redis 7 adds optional node metadata to CLUSTER SLOTS. go-redis/v8's
+	// ClusterSlots parser rejects that fourth element; inspect the protocol
+	// response without changing the production client or dependency set.
+	raw, err := cluster.Do(t.Context(), "CLUSTER", "SLOTS").Result()
 	require.NoError(t, err)
+	require.IsType(t, []any{}, raw)
+	var slots []redis.ClusterSlot
+	for _, entry := range raw.([]any) {
+		require.IsType(t, []any{}, entry)
+		fields := entry.([]any)
+		require.GreaterOrEqual(t, len(fields), 3)
+		require.IsType(t, int64(0), fields[0])
+		require.IsType(t, int64(0), fields[1])
+		slot := redis.ClusterSlot{Start: int(fields[0].(int64)), End: int(fields[1].(int64))}
+		for _, value := range fields[2:] {
+			require.IsType(t, []any{}, value)
+			node := value.([]any)
+			require.GreaterOrEqual(t, len(node), 3)
+			slot.Nodes = append(slot.Nodes, redis.ClusterNode{ID: fmt.Sprint(node[2]), Addr: fmt.Sprintf("%v:%v", node[0], node[1])})
+		}
+		slots = append(slots, slot)
+	}
 	masters, nodes := map[string]bool{}, map[string]bool{}
 	for _, slot := range slots {
 		require.NotEmpty(t, slot.Nodes)
