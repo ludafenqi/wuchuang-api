@@ -65,6 +65,36 @@ function renderManagement(overrides: Partial<SiteSettings> = {}) {
 }
 
 describe('visual footer management', () => {
+  it('saves full Unicode descriptions and preserves the notice after reopening', async () => {
+    const user = userEvent.setup()
+    const put = vi
+      .spyOn(api, 'put')
+      .mockResolvedValue({ data: { success: true } })
+    const notice = '## Credits\n[Source](https://example.com/source)'
+    const view = renderManagement({
+      FooterConfig: JSON.stringify({
+        ...defaultFooterConfig(),
+        openSourceNotice: notice,
+      }),
+    })
+    const description = '😀'.repeat(500)
+    await user.clear(screen.getByLabelText('Brand description'))
+    await user.click(screen.getByLabelText('Brand description'))
+    await user.paste(description)
+    expect(screen.getByLabelText('Brand description')).toHaveValue(description)
+    await user.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() => expect(put).toHaveBeenCalledTimes(1))
+    const stored = (put.mock.calls[0][1] as { FooterConfig: string })
+      .FooterConfig
+    expect(JSON.parse(stored)).toMatchObject({
+      description,
+      openSourceNotice: notice,
+    })
+    view.unmount()
+    renderManagement({ FooterConfig: stored })
+    expect(screen.getByLabelText('Brand description')).toHaveValue(description)
+    expect(screen.getByLabelText('Home open-source notice')).toHaveValue(notice)
+  })
   it('saves a multiline home notice with editable links and restores it when the settings reopen', async () => {
     const user = userEvent.setup()
     const put = vi
