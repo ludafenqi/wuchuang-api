@@ -364,9 +364,20 @@ try {
           ),
           `Price confirmation overflow at ${width}/${theme}`
         )
+        await dialog.evaluate(async (element) => {
+          await Promise.all(
+            element.getAnimations().map((animation) => animation.finished)
+          )
+        })
+        assert.equal(
+          await dialog.evaluate((element) => getComputedStyle(element).opacity),
+          '1',
+          'Capture the settled confirmation, after its enter animation'
+        )
         await page.screenshot({
           path: path.join(output, `pricing-confirm-${width}-${theme}.png`),
           fullPage: true,
+          animations: 'disabled',
         })
         await dialog
           .getByRole('button', { name: 'Cancel', exact: true })
