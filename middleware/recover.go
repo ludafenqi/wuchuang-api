@@ -8,7 +8,11 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 )
 
@@ -27,6 +31,7 @@ func (w *panicRecoveryWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 func RelayPanicRecover() gin.HandlerFunc {
+	translationsReady := i18n.Init() == nil
 	return func(c *gin.Context) {
 		writer := &panicRecoveryWriter{ResponseWriter: c.Writer}
 		c.Writer = writer
@@ -66,9 +71,19 @@ func RelayPanicRecover() gin.HandlerFunc {
 					panic(http.ErrAbortHandler)
 				}
 				c.Header("Content-Type", "application/json; charset=utf-8")
+				message := "Internal server error. Please submit a issue here: https://github.com/Calcium-Ion/new-api"
+				if translationsReady {
+					// Recovery may follow a database/cache panic. Use only the
+					// already-loaded settings and header; never lazy-load the user.
+					lang := i18n.ParseAcceptLanguage(c.GetHeader("Accept-Language"))
+					if settings, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting); ok && settings.Language != "" {
+						lang = settings.Language
+					}
+					message = i18n.Translate(lang, i18n.MsgInternalServerError)
+				}
 				c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
 					"error": gin.H{
-						"message": "Internal server error. Please submit a issue here: https://github.com/Calcium-Ion/new-api",
+						"message": message,
 						"type":    "new_api_panic",
 					},
 				})

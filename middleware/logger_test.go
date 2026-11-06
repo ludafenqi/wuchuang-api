@@ -17,7 +17,9 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
@@ -71,6 +73,46 @@ func TestSetUpLoggerMasksQueryCredentials(t *testing.T) {
 					assert.Equal(t, tc.target, request.RequestURI)
 				})
 			}
+		})
+	}
+}
+
+func TestPanicRecoveryLocalizesWithoutLoadingUserState(t *testing.T) {
+	const english = "Internal server error. Please submit a issue here: https://github.com/Calcium-Ion/new-api"
+	const simplified = "服务器内部错误。请在此提交问题：https://github.com/Calcium-Ion/new-api"
+	const traditional = "伺服器內部錯誤。請在此提交問題：https://github.com/Calcium-Ion/new-api"
+	previousDefault := common.DefaultLanguage
+	t.Cleanup(func() { common.DefaultLanguage = previousDefault })
+	for _, tc := range []struct{ name, header, saved, fallback, want string }{
+		{"English header", "en", "", "en", english},
+		{"Simplified header", "zh-CN", "", "en", simplified},
+		{"Traditional header", "zh-TW", "", "en", traditional},
+		{"loaded preference", "en", "zhTW", "en", traditional},
+		{"server default", "", "", "zh-CN", simplified},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			common.DefaultLanguage = tc.fallback
+			router := gin.New()
+			router.Use(PanicRecover())
+			router.GET("/panic", func(c *gin.Context) {
+				c.Set("id", 82)
+				if tc.saved != "" {
+					common.SetContextKey(c, constant.ContextKeyUserSetting, dto.UserSetting{Language: tc.saved})
+				}
+				panic("LOCALIZATION_SECRET")
+			})
+			request := httptest.NewRequest(http.MethodGet, "/panic", nil)
+			request.Header.Set("Accept-Language", tc.header)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			require.Equal(t, http.StatusInternalServerError, response.Code)
+			var result struct {
+				Error struct{ Message, Type string }
+			}
+			require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+			assert.Equal(t, tc.want, result.Error.Message)
+			assert.Equal(t, "new_api_panic", result.Error.Type)
+			assert.NotContains(t, response.Body.String(), "LOCALIZATION_SECRET")
 		})
 	}
 }
