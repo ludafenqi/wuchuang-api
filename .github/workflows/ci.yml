@@ -64,7 +64,7 @@ jobs:
           bun-version: '1.4.4'
 
       - name: Test upstream review PR creation and refresh
-        run: node --test .github/scripts/upstream-review.test.mjs .github/scripts/merge-upstream-locales.test.mjs
+        run: node --test .github/scripts/upstream-review.test.mjs .github/scripts/merge-upstream-locales.test.mjs .github/scripts/prepare-upstream-candidate.test.mjs
 
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
@@ -115,6 +115,9 @@ jobs:
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
         run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+
+      - name: Verify auth cache operations on a real six-node Redis Cluster
+        run: bash .github/scripts/verify-redis-cluster.sh
 
       - name: Verify channel creation and rollback on three real databases
         shell: bash

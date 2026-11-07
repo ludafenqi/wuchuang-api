@@ -22,6 +22,8 @@ function reviewFixture(t, { previous, reviews = [], fail = "" } = {}) {
     base: sha("a"),
     candidate: sha("b"),
     calls: [],
+    waits: [],
+    staleViews: 0,
     env: {
       GITHUB_REPOSITORY: "owner/fork",
       GITHUB_SERVER_URL: "https://github.com",
@@ -46,6 +48,7 @@ function reviewFixture(t, { previous, reviews = [], fail = "" } = {}) {
         "HEAD:refs/heads/automation/upstream-sync",
       ]);
       if (state.pr) {
+        state.previousHead = state.pr.headRefOid;
         assert.equal(state.pr.isDraft, true);
         assert.equal(state.pr.autoMergeRequest, null);
         assert.ok(
@@ -56,6 +59,10 @@ function reviewFixture(t, { previous, reviews = [], fail = "" } = {}) {
         state.pr.body += "\n人工追加：保留配置检查说明\n";
       }
       return "";
+    }
+    if (command === "git" && args[0] === "ls-remote") {
+      assert.deepEqual(args, ["ls-remote", "origin", "refs/heads/automation/upstream-sync"]);
+      return `${state.remoteHead || state.candidate}\trefs/heads/automation/upstream-sync\n`;
     }
     assert.equal(command, "gh");
     if (args[0] === "api") {
@@ -84,6 +91,7 @@ function reviewFixture(t, { previous, reviews = [], fail = "" } = {}) {
         state.pr.isDraft = true;
         return "";
       case "view":
+        if (state.staleViews-- > 0) return JSON.stringify({ ...state.pr, headRefOid: state.previousHead });
         return JSON.stringify(state.pr);
       case "edit":
       case "create": {
@@ -107,8 +115,42 @@ function reviewFixture(t, { previous, reviews = [], fail = "" } = {}) {
         throw Error(`Unexpected gh operation: ${args.join(" ")}`);
     }
   };
-  return { state, refresh: () => refreshUpstreamReview({ run, env: state.env, pin: state.pin }) };
+  return { state, refresh: () => refreshUpstreamReview({ run, env: state.env, pin: state.pin, wait: (ms) => state.waits.push(ms) }) };
 }
+
+test("a lagging PR projection catches up without losing human notes", (t) => {
+  const { state, refresh } = reviewFixture(t);
+  refresh();
+  state.candidate = sha("2");
+  state.staleViews = 2;
+  refresh();
+  assert.deepEqual(state.waits, [1000, 2000]);
+  assert.ok(state.pr.body.includes(state.candidate));
+  assert.ok(state.pr.body.includes("人工追加：保留配置检查说明"));
+  assert.equal(state.pr.isDraft, true);
+});
+
+test("a real branch change stops a lagging PR refresh before rewriting its body", (t) => {
+  const { state, refresh } = reviewFixture(t);
+  refresh();
+  state.candidate = sha("2");
+  state.remoteHead = sha("3");
+  state.staleViews = 2;
+  state.calls = [];
+  assert.throws(refresh, /Sync branch changed concurrently/);
+  assert.equal(state.calls.some(c => c[1] === "pr" && c[2] === "edit"), false);
+});
+
+test("an indefinitely lagging PR stops after a bounded wait without rewriting its body", (t) => {
+  const { state, refresh } = reviewFixture(t);
+  refresh();
+  state.candidate = sha("2");
+  state.staleViews = 9;
+  state.calls = [];
+  assert.throws(refresh, /Sync PR head changed concurrently/);
+  assert.deepEqual(state.waits, [1000, 2000, 3000, 4000]);
+  assert.equal(state.calls.some(c => c[1] === "pr" && c[2] === "edit"), false);
+});
 
 test("creates a draft with the actual base, upstream, candidate, UI and run evidence", (t) => {
   const { state, refresh } = reviewFixture(t);
@@ -125,6 +167,9 @@ test("creates a draft with the actual base, upstream, candidate, UI and run evid
     assert.ok(state.pr.body.includes(value), value);
   }
   assert.ok(state.pr.body.includes("- [ ] 本轮视觉与合并批准"));
+  assert.ok(state.pr.body.includes("## 🔗 关联任务 / Related Issue"));
+  assert.ok(state.pr.body.includes("## 📸 运行证明 / Proof of Work"));
+  assert.ok(state.pr.body.includes("- [ ] **人工确认:**"));
   assert.equal(state.pr.isDraft, true);
 });
 

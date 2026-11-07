@@ -24,7 +24,7 @@ export function updateReviewBody(previous, generated) {
   return previous.slice(0, first) + generated + previous.slice(last + end.length);
 }
 
-export function refreshUpstreamReview({ run, env, pin }) {
+export function refreshUpstreamReview({ run, env, pin, wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }) {
   const repo = env.GITHUB_REPOSITORY;
   assert.match(repo, /^[\w.-]+\/[\w.-]+$/);
   assert.match(env.GITHUB_RUN_ID, /^\d+$/);
@@ -72,7 +72,7 @@ ${end}`;
       "--base",
       "main",
       "--json",
-      "number,body,isDraft,autoMergeRequest",
+      "number,body,isDraft,autoMergeRequest,headRefOid",
     ]),
   );
   assert.ok(open.length <= 1, "Multiple open upstream sync PRs");
@@ -115,7 +115,9 @@ ${end}`;
   let previous = "";
   if (existing) {
     // Read notes again after the push so notes added during validation survive.
-    const current = JSON.parse(
+    let current;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      current = JSON.parse(
       run("gh", [
         "pr",
         "view",
@@ -125,14 +127,36 @@ ${end}`;
         "--json",
         "body,isDraft,headRefOid,autoMergeRequest",
       ]),
-    );
+      );
+      if (current.headRefOid === candidate) break;
+      // GitHub's PR projection can briefly lag the branch push. Accept only
+      // the known previous PR head, and prove that the actual branch still
+      // points at our tested commit before waiting for that projection.
+      assert.equal(current.headRefOid, existing.headRefOid, "Sync PR head changed concurrently");
+      const remoteHead = run("git", ["ls-remote", "origin", "refs/heads/automation/upstream-sync"]).trim().split(/\s+/)[0];
+      assert.equal(remoteHead, candidate, "Sync branch changed concurrently");
+      if (attempt < 4) wait((attempt + 1) * 1000);
+    }
     assert.equal(current.headRefOid, candidate, "Sync PR head changed concurrently");
     assert.equal(current.isDraft, true, "Sync PR must remain a draft");
     assert.equal(current.autoMergeRequest, null, "Sync PR must not auto-merge");
     previous = current.body || "";
   }
   const bodyFile = path.join(env.RUNNER_TEMP, "upstream-pr.md");
-  fs.writeFileSync(bodyFile, updateReviewBody(previous, generated));
+  let body = updateReviewBody(previous, generated);
+  if (!existing) {
+    // Owner PRs use the ordinary Chinese template. Human acknowledgements
+    // remain unchecked; only the evidence block is refreshed on later runs.
+    const template = fs.readFileSync(".github/PULL_REQUEST_TEMPLATE.md", "utf8");
+    const notice = template.indexOf("# ⚠️ 提交说明 / PR Notice");
+    assert.ok(notice >= 0, "Owner PR template changed; review before creating a PR");
+    body = template.slice(notice)
+      .replace("- Closes #", "- 关联任务：维护者要求的上游候选同步与 WuCora UI 回归；独立审阅后决定是否合并")
+      .replace("- [ ] 🐛 Bug 修复", "- [x] 🐛 Bug 修复")
+      .replace("(简述做了什么、为什么生效。不得直接粘贴未经人工过滤的大段 AI 文本。如果难以简述，建议先拆分范围，或在 Issue 中与维护者对齐。)", "AI-assisted：合入固定上游提交，保留 WuCora UI 及既有回归覆盖。冲突解决、同步流程和验证变更均需审阅；草稿不代表人工验收。")
+      .replace("(请写明如何验证：实际命令或步骤，以及观察结果。仅声明 `go build` 通过或测试通过，不视为有效证明。UI 变更请附截图或录屏；Bug 修复请说明复现过程与修复后结果。)", generated);
+  }
+  fs.writeFileSync(bodyFile, body);
   if (existing) {
     run("gh", ["pr", "edit", String(existing.number), "--repo", repo, "--body-file", bodyFile]);
   } else {
