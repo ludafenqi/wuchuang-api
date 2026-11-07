@@ -3,12 +3,16 @@ package vertex
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -94,8 +98,10 @@ func TestGetAccessTokenSeparatesKeySlotsAndReplacedKeys(t *testing.T) {
 func TestGetAccessTokenSharesOneExchangeAcrossConcurrentRequests(t *testing.T) {
 	var calls atomic.Int32
 	release := make(chan struct{})
+	started := make(chan struct{}, 1)
 	stubAccessTokenFetch(t, func(Credentials, string) (string, time.Duration, error) {
 		calls.Add(1)
+		started <- struct{}{}
 		<-release
 		return "shared", time.Hour, nil
 	})
@@ -106,13 +112,11 @@ func TestGetAccessTokenSharesOneExchangeAcrossConcurrentRequests(t *testing.T) {
 	var wg sync.WaitGroup
 	results := make([]string, workers)
 	for i := range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			results[i], _ = getAccessToken(a, info)
-		}()
+		})
 	}
-	time.Sleep(50 * time.Millisecond)
+	<-started
 	close(release)
 	wg.Wait()
 
@@ -138,4 +142,90 @@ func TestGetAccessTokenDoesNotCacheFailures(t *testing.T) {
 	token, err := getAccessToken(a, info)
 	require.NoError(t, err)
 	assert.Equal(t, "recovered", token)
+}
+
+func TestGetAccessTokenRotatedPrivateKeyWithUnchangedID(t *testing.T) {
+	var calls atomic.Int32
+	stubAccessTokenFetch(t, func(creds Credentials, _ string) (string, time.Duration, error) {
+		calls.Add(1)
+		return "token-for-" + creds.PrivateKey, time.Hour, nil
+	})
+	info := newAccessTokenTestInfo(13)
+	a := newAccessTokenTestAdaptor("")
+	a.AccountCredentials.PrivateKey = "old-private-material"
+	first, err := getAccessToken(a, info)
+	require.NoError(t, err)
+	a.AccountCredentials.PrivateKey = "replacement-private-material"
+	second, err := getAccessToken(a, info)
+	require.NoError(t, err)
+	assert.NotEqual(t, first, second)
+	assert.Equal(t, int32(2), calls.Load())
+}
+
+func TestGetAccessTokenDoesNotCacheShortLivedTokens(t *testing.T) {
+	var calls atomic.Int32
+	stubAccessTokenFetch(t, func(Credentials, string) (string, time.Duration, error) {
+		calls.Add(1)
+		return "short-lived", accessTokenRefreshMargin, nil
+	})
+	for range 2 {
+		token, err := getAccessToken(newAccessTokenTestAdaptor("short"), newAccessTokenTestInfo(14))
+		require.NoError(t, err)
+		assert.Equal(t, "short-lived", token)
+	}
+	assert.Equal(t, int32(2), calls.Load())
+}
+
+type tokenExchangeTransport func(*http.Request) (*http.Response, error)
+
+func (f tokenExchangeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func TestExchangeJwtValidatesTokenResponseWithoutLeakingSecrets(t *testing.T) {
+	client, err := service.GetHttpClientWithProxy("")
+	require.NoError(t, err)
+	original := client.Transport
+	t.Cleanup(func() { client.Transport = original })
+	for _, tc := range []struct {
+		name      string
+		status    int
+		body      string
+		lifetime  time.Duration
+		wantError bool
+	}{
+		{name: "valid lifetime", status: 200, body: `{"access_token":"token","expires_in":3600}`, lifetime: time.Hour},
+		{name: "short lifetime", status: 200, body: `{"access_token":"token","expires_in":60}`, lifetime: time.Minute},
+		{name: "missing expiry keeps compatibility", status: 200, body: `{"access_token":"token"}`, lifetime: time.Hour},
+		{name: "zero expiry", status: 200, body: `{"access_token":"token","expires_in":0}`, wantError: true},
+		{name: "negative expiry", status: 200, body: `{"access_token":"token","expires_in":-1}`, wantError: true},
+		{name: "fractional expiry", status: 200, body: `{"access_token":"token","expires_in":1.5}`, wantError: true},
+		{name: "overflow expiry", status: 200, body: `{"access_token":"token","expires_in":1e30}`, wantError: true},
+		{name: "wrong expiry type", status: 200, body: `{"access_token":"token","expires_in":"3600"}`, wantError: true},
+		{name: "null expiry", status: 200, body: `{"access_token":"token","expires_in":null}`, wantError: true},
+		{name: "empty token", status: 200, body: `{"access_token":"  ","expires_in":3600}`, wantError: true},
+		{name: "missing token", status: 200, body: `{"error_description":"secret-marker"}`, wantError: true},
+		{name: "failure status with token", status: 401, body: `{"access_token":"secret-marker","expires_in":3600}`, wantError: true},
+		{name: "malformed response", status: 200, body: `secret-marker`, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client.Transport = tokenExchangeTransport(func(req *http.Request) (*http.Response, error) {
+				assert.Equal(t, "https://www.googleapis.com/oauth2/v4/token", req.URL.String())
+				require.NoError(t, req.ParseForm())
+				assert.Equal(t, "signed-jwt", req.Form.Get("assertion"))
+				return &http.Response{StatusCode: tc.status, Body: io.NopCloser(strings.NewReader(tc.body)), Header: make(http.Header)}, nil
+			})
+			token, lifetime, err := exchangeJwtForAccessToken("signed-jwt", "")
+			if tc.wantError {
+				require.Error(t, err)
+				assert.NotContains(t, err.Error(), "secret-marker")
+				assert.Empty(t, token)
+				assert.Zero(t, lifetime)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "token", token)
+			assert.Equal(t, tc.lifetime, lifetime)
+		})
+	}
 }

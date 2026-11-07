@@ -141,13 +141,17 @@ jobs:
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         run: bash .github/scripts/verify-redis-cluster.sh
 
+      - name: Verify Vertex token caching under the race detector
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        run: go test -race ./relay/channel/vertex -run '^TestGetAccessToken|^TestExchangeJwt' -count=1 -timeout=120s
+
       - name: Verify channel creation and rollback on three real databases
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         shell: bash
         run: |
           set -euo pipefail
           for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
-            TEST_CHANNEL_SQL_DSN="$dsn" go test ./controller -run '^TestAddChannel(ReturnsCreatedIDs|InvalidVertexBatchDoesNotReturnResults|RollbackDoesNotReturnIDs|PanicRollsBackWithoutSuccess)$' -count=1 -v
+            TEST_CHANNEL_SQL_DSN="$dsn" go test ./controller -run '^TestAddChannel(ReturnsCreatedIDs|InvalidVertexBatchDoesNotReturnResults|RollbackDoesNotReturnIDs|PanicRollsBackWithoutSuccess)$|^TestMultiKeyEnableRestoresOnlyExhaustedChannels$' -count=1 -v
           done
 
       - name: Verify delivered SSE settlement despite failures on three real databases

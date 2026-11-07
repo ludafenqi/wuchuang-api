@@ -2,13 +2,16 @@ package vertex
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
-	"encoding/json"
 	"encoding/pem"
+	"math"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 
@@ -53,7 +56,7 @@ func getAccessToken(a *Adaptor, info *relaycommon.RelayInfo) (string, error) {
 	}
 	creds := a.AccountCredentials
 	// A replaced service-account key must not reuse the old key's token.
-	identity := creds.ClientEmail + "\x00" + creds.PrivateKeyID
+	identity := fmt.Sprintf("%x", sha256.Sum256([]byte(creds.ClientEmail+"\x00"+creds.PrivateKeyID+"\x00"+creds.PrivateKey)))
 	if token, ok := loadAccessToken(cacheKey, identity); ok {
 		return token, nil
 	}
@@ -175,18 +178,25 @@ func exchangeJwtForAccessToken(signedJWT string, proxy string) (string, time.Dur
 		return "", 0, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", 0, fmt.Errorf("access token endpoint returned HTTP %d", resp.StatusCode)
+	}
 
 	var result map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", 0, err
+	if err := common.DecodeJson(resp.Body, &result); err != nil {
+		return "", 0, fmt.Errorf("invalid access token response JSON")
 	}
 
 	accessToken, ok := result["access_token"].(string)
-	if !ok {
-		return "", 0, fmt.Errorf("failed to get access token: %v", result)
+	if !ok || strings.TrimSpace(accessToken) == "" {
+		return "", 0, fmt.Errorf("access token response has no usable token")
 	}
 	lifetime := time.Hour
-	if seconds, ok := result["expires_in"].(float64); ok && seconds > 0 {
+	if value, present := result["expires_in"]; present {
+		seconds, ok := value.(float64)
+		if !ok || seconds <= 0 || seconds > float64(math.MaxInt64/int64(time.Second)) || math.Trunc(seconds) != seconds {
+			return "", 0, fmt.Errorf("access token response has invalid expires_in")
+		}
 		lifetime = time.Duration(seconds) * time.Second
 	}
 	return accessToken, lifetime, nil

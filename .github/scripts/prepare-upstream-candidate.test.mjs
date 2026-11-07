@@ -107,6 +107,26 @@ test('unresolved non-locale conflicts abort without changing main or the index',
   assert.equal(f.git(['rev-parse', 'main']), f.base)
 })
 
+test('an explicit reviewed candidate keeps its fixes even when upstream merges cleanly', (t) => {
+  const f = repository(t, false)
+  f.git(['checkout', 'prepared'])
+  f.write('regression-fix.txt', 'reviewed credential rotation fix\n')
+  const resolved = f.commit('review fix after the clean merge')
+  f.git(['checkout', 'main'])
+  const result = prepareCandidate({
+    ...f,
+    resolved,
+    resolveLocales: () => assert.fail('No conflict expected'),
+  })
+  assert.deepEqual(result.conflicts, [])
+  assert.equal(result.candidate, resolved)
+  assert.equal(
+    f.git(['show', 'HEAD:regression-fix.txt']),
+    'reviewed credential rotation fix'
+  )
+  assert.equal(f.git(['rev-parse', 'main']), f.base)
+})
+
 test('an explicitly pinned resolution follows an actual failed merge and keeps both changes', (t) => {
   const f = repository(t)
   const result = prepareCandidate({
