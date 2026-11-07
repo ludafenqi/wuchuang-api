@@ -373,9 +373,37 @@ func TestStreamPanicDoesNotAddRefundAfterAccountingAttempt(t *testing.T) {
 }
 
 func TestRealtimePanicPreservesActualAccounting(t *testing.T) {
-	for _, scenario := range []string{"normal", "two responses", "panic after usage", "panic before usage"} {
+	for _, scenario := range []string{"normal", "two responses", "panic after usage", "panic before usage", "reservation insufficient", "reservation update failure", "reservation update panic", "local reservation insufficient", "local reservation update failure", "local reservation update panic"} {
 		t.Run(scenario, func(t *testing.T) {
 			db := relayPanicDatabase(t)
+			reservationFailure := strings.Contains(scenario, "reservation ")
+			localEstimate := strings.HasPrefix(scenario, "local ")
+			if strings.HasSuffix(scenario, "reservation insufficient") {
+				initialQuota := 18
+				if localEstimate {
+					initialQuota = 3
+				}
+				require.NoError(t, db.Model(&model.User{}).Where("id = ?", 82).Update("quota", initialQuota).Error)
+			}
+			var walletUpdates atomic.Int32
+			if strings.Contains(scenario, "reservation update ") {
+				require.NoError(t, db.Callback().Update().Before("gorm:begin_transaction").Register("round11:reserve-failure", func(tx *gorm.DB) {
+					if tx.Statement.Schema == nil || tx.Statement.Schema.Name != "User" {
+						return
+					}
+					values, ok := tx.Statement.Dest.(map[string]any)
+					if !ok {
+						return
+					}
+					delta, ok := values["quota"].(clause.Expr)
+					if ok && delta.SQL == "quota - ?" && walletUpdates.Add(1) == 2 {
+						if strings.HasSuffix(scenario, "panic") {
+							panic("ROUND11_RESERVE_PANIC_SECRET")
+						}
+						tx.AddError(errors.New("injected wallet reservation failure"))
+					}
+				}))
+			}
 			oldPrices, oldRatios, oldGroup := ratio_setting.ModelPrice2JSONString(), ratio_setting.ModelRatio2JSONString(), ratio_setting.GroupRatio2JSONString()
 			oldCompletion := ratio_setting.CompletionRatio2JSONString()
 			quota := operation_setting.GetQuotaSetting()
@@ -428,22 +456,40 @@ func TestRealtimePanicPreservesActualAccounting(t *testing.T) {
 			}
 			t.Cleanup(func() { _ = peer.Close() })
 			completed := `{"type":"response.done","response":{"usage":{"total_tokens":12,"input_tokens":10,"output_tokens":2,"input_token_details":{"text_tokens":10},"output_token_details":{"text_tokens":2}}}}`
+			if localEstimate {
+				completed = `{"type":"response.done","response":{}}`
+			}
 			responses := 1
-			if scenario == "two responses" {
+			if scenario == "two responses" || reservationFailure {
 				responses = 2
 			}
-			for range responses {
+			for response := range responses {
 				if scenario != "panic before usage" {
+					if reservationFailure {
+						// Content was delivered before the authoritative usage arrives.
+						// Its local estimate must not be billed again after a failed reserve.
+						delta := `{"type":"response.audio_transcript.delta","delta":"x"}`
+						require.NoError(t, peer.WriteMessage(1, []byte(delta)))
+						require.NoError(t, client.SetReadDeadline(time.Now().Add(3*time.Second)))
+						_, message, err := client.ReadMessage()
+						require.NoError(t, err)
+						assert.JSONEq(t, delta, string(message))
+					}
 					require.NoError(t, peer.WriteMessage(1, []byte(completed)))
 					require.NoError(t, client.SetReadDeadline(time.Now().Add(3*time.Second)))
 					_, message, err := client.ReadMessage()
-					require.NoError(t, err)
-					assert.JSONEq(t, completed, string(message))
+					if reservationFailure && response == 1 {
+						assert.Error(t, err, "the failed reservation must stop the connection")
+						assert.NotContains(t, string(message), "data:")
+					} else {
+						require.NoError(t, err)
+						assert.JSONEq(t, completed, string(message))
+					}
 				}
 			}
 			if scenario == "normal" || scenario == "two responses" {
 				require.NoError(t, peer.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1000, "")))
-			} else {
+			} else if !reservationFailure {
 				require.NoError(t, peer.WriteMessage(1, []byte(`{"type":"response.done"}`)))
 			}
 			select {
@@ -459,27 +505,44 @@ func TestRealtimePanicPreservesActualAccounting(t *testing.T) {
 			require.NoError(t, db.First(&token, 82).Error)
 			require.NoError(t, db.First(&channel, 82).Error)
 			require.NoError(t, model.LOG_DB.Where("type = ?", model.LogTypeConsume).Find(&records).Error)
-			balance, used, requests := 9988, 12, 1
-			if scenario == "two responses" {
-				balance, used = 9976, 24
+			wallet, tokenBalance, used, requests, prompt, completion := 9988, 9988, 12, 1, 10, 2
+			if scenario == "two responses" || reservationFailure {
+				wallet, tokenBalance, used, prompt, completion = 9976, 9976, 24, 20, 4
+			}
+			if scenario == "reservation insufficient" {
+				// Final settlement retains the existing debt semantics for delivered
+				// usage; insufficient reservation must not duplicate that usage.
+				wallet = 18 - used
+			}
+			if localEstimate {
+				wallet, tokenBalance, used, prompt, completion = 9996, 9996, 4, 0, 4
+				if scenario == "local reservation insufficient" {
+					wallet = 3 - used
+				}
 			}
 			if scenario == "panic before usage" {
-				balance, used, requests = 10000, 0, 0
+				wallet, tokenBalance, used, requests, prompt, completion = 10000, 10000, 0, 0, 0, 0
 			}
-			assert.Equal(t, balance, user.Quota)
-			assert.Equal(t, balance, token.RemainQuota)
+			assert.Equal(t, wallet, user.Quota)
+			assert.Equal(t, tokenBalance, token.RemainQuota)
 			assert.Equal(t, used, user.UsedQuota)
 			assert.Equal(t, used, token.UsedQuota)
 			assert.EqualValues(t, used, channel.UsedQuota)
 			assert.Equal(t, requests, user.RequestCount)
 			require.Len(t, records, 1)
 			assert.Equal(t, used, records[0].Quota)
+			assert.Equal(t, prompt, records[0].PromptTokens)
+			assert.Equal(t, completion, records[0].CompletionTokens)
+			if strings.Contains(scenario, "reservation update ") {
+				assert.EqualValues(t, 3, walletUpdates.Load(), "reserve, injected failure, final settlement")
+			}
 			assert.EqualValues(t, 1, attempts.Load())
 			require.NoError(t, client.SetReadDeadline(time.Now().Add(time.Second)))
 			_, tail, err := client.ReadMessage()
 			assert.Error(t, err)
 			assert.NotContains(t, string(tail), "data:")
 			assert.NotContains(t, string(tail), "ROUND8_")
+			assert.NotContains(t, string(tail), "ROUND11_")
 			t.Logf("scenario=%s attempts=%d wallet=%d token=%d userUsed=%d tokenUsed=%d channelUsed=%d requests=%d logQuota=%d", scenario, attempts.Load(), user.Quota, token.RemainQuota, user.UsedQuota, token.UsedQuota, channel.UsedQuota, user.RequestCount, records[0].Quota)
 		})
 	}
