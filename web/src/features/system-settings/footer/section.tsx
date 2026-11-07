@@ -128,7 +128,7 @@ export function FooterManagement(props: { settings: SiteSettings }) {
                   <FormItem>
                     <FormLabel>{t('Brand description')}</FormLabel>
                     <FormControl>
-                      <Textarea {...field} maxLength={500} />
+                      <Textarea {...field} maxLength={1000} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -141,7 +141,7 @@ export function FooterManagement(props: { settings: SiteSettings }) {
                   <FormItem>
                     <FormLabel>{t('Copyright text')}</FormLabel>
                     <FormControl>
-                      <Input {...field} maxLength={200} />
+                      <Input {...field} maxLength={400} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

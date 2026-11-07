@@ -18,6 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+// Legacy footer text limits count Unicode code points, matching Go's rune
+// counts. The notice below deliberately retains its UTF-16 contract.
+function unicodeText(maximum: number): z.ZodString {
+  return z.string().refine((value) => [...value].length <= maximum)
+}
+
 export function isSafeFooterUrl(value: string, external: boolean): boolean {
   if (!value) return true
   if (value.length > 2048) return false
@@ -53,9 +59,13 @@ export function isSafeFooterUrl(value: string, external: boolean): boolean {
 export const footerLinkSchema = z
   .object({
     id: z.string().min(1).max(80),
-    label: z.string().trim().min(1).max(80),
+    label: z
+      .string()
+      .trim()
+      .min(1)
+      .refine((value) => [...value].length <= 80),
     url: z.string().max(2048),
-    group: z.string().max(40),
+    group: unicodeText(40),
     visible: z.boolean(),
     external: z.boolean(),
     source: z.enum([
@@ -79,8 +89,8 @@ export const footerConfigSchema = z
     version: z.literal(1),
     enabled: z.boolean(),
     layout: z.enum(['brand', 'developer', 'minimal']),
-    description: z.string().max(500),
-    copyright: z.string().max(200),
+    description: unicodeText(500),
+    copyright: unicodeText(200),
     openSourceNotice: z.string().max(12000).optional(),
     autoYear: z.boolean(),
     year: z.string().regex(/^(?:\d{4}(?:-\d{4})?)?$/),
