@@ -154,15 +154,14 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 							usage.InputTokenDetails.TextTokens += realtimeUsage.InputTokenDetails.TextTokens
 							usage.OutputTokenDetails.AudioTokens += realtimeUsage.OutputTokenDetails.AudioTokens
 							usage.OutputTokenDetails.TextTokens += realtimeUsage.OutputTokenDetails.TextTokens
+							// Authoritative usage replaces this response's local estimate,
+							// including when reservation expansion fails or panics.
+							localUsage = &dto.RealtimeUsage{}
 							err := preConsumeUsage(c, info, usage, sumUsage)
 							if err != nil {
 								errChan <- errors.New("error consume usage")
 								return false
 							}
-							// 本次计费完成，清除
-							usage = &dto.RealtimeUsage{}
-
-							localUsage = &dto.RealtimeUsage{}
 						} else {
 							textToken, audioToken, err := countTokens(info, *realtimeEvent, info.UpstreamModelName)
 							if err != nil {
@@ -180,9 +179,6 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 								errChan <- errors.New("error consume usage")
 								return false
 							}
-							// 本次计费完成，清除
-							localUsage = &dto.RealtimeUsage{}
-							// print now usage
 						}
 						logger.LogInfo(c, common.LogText("realtime streaming sumUsage: %v", sumUsage))
 						logger.LogInfo(c, common.LogText("realtime streaming localUsage: %v", localUsage))
@@ -260,18 +256,20 @@ func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.R
 		return fmt.Errorf("invalid usage pointer")
 	}
 
-	totalUsage.TotalTokens += usage.TotalTokens
-	totalUsage.InputTokens += usage.InputTokens
-	totalUsage.OutputTokens += usage.OutputTokens
-	totalUsage.InputTokenDetails.CachedTokens += usage.InputTokenDetails.CachedTokens
-	totalUsage.InputTokenDetails.TextTokens += usage.InputTokenDetails.TextTokens
-	totalUsage.InputTokenDetails.AudioTokens += usage.InputTokenDetails.AudioTokens
-	totalUsage.OutputTokenDetails.TextTokens += usage.OutputTokenDetails.TextTokens
-	totalUsage.OutputTokenDetails.AudioTokens += usage.OutputTokenDetails.AudioTokens
-	// clear usage
+	// Move the pending fact into cumulative usage exactly once. Reservation can
+	// fail or panic; cleanup must retain the fact without adding it a second time.
+	pending := *usage
+	*usage = dto.RealtimeUsage{}
+	totalUsage.TotalTokens += pending.TotalTokens
+	totalUsage.InputTokens += pending.InputTokens
+	totalUsage.OutputTokens += pending.OutputTokens
+	totalUsage.InputTokenDetails.CachedTokens += pending.InputTokenDetails.CachedTokens
+	totalUsage.InputTokenDetails.TextTokens += pending.InputTokenDetails.TextTokens
+	totalUsage.InputTokenDetails.AudioTokens += pending.InputTokenDetails.AudioTokens
+	totalUsage.OutputTokenDetails.TextTokens += pending.OutputTokenDetails.TextTokens
+	totalUsage.OutputTokenDetails.AudioTokens += pending.OutputTokenDetails.AudioTokens
 	if info.Billing != nil {
 		return service.PreWssConsumeQuota(ctx, info, totalUsage)
 	}
-	err := service.PreWssConsumeQuota(ctx, info, usage)
-	return err
+	return service.PreWssConsumeQuota(ctx, info, &pending)
 }
