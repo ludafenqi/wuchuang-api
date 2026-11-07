@@ -23,6 +23,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { BrandFooter } from '../brand-footer'
 import {
   defaultFooterConfig,
+  footerConfigSchema,
   isSafeFooterUrl,
   parseFooterConfig,
   visibleFooterLinks,
@@ -35,6 +36,52 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 describe('footer configuration', () => {
+  it.each(['a', '声', '😀'])(
+    'keeps backend character limits and the notice for %s',
+    (character) => {
+      const notice = '## Credits\n[Source](https://example.com/source)'
+      const config = {
+        ...defaultFooterConfig(),
+        description: character.repeat(500),
+        copyright: character.repeat(200),
+        openSourceNotice: notice,
+        links: [
+          {
+            id: 'unicode',
+            label: character.repeat(80),
+            group: character.repeat(40),
+            url: '/pricing',
+            visible: true,
+            external: false,
+            source: 'custom' as const,
+          },
+        ],
+      }
+      expect(footerConfigSchema.safeParse(config).success).toBe(true)
+      expect(parseFooterConfig(JSON.stringify(config))).toEqual(config)
+      for (const field of ['description', 'copyright'] as const) {
+        expect(
+          footerConfigSchema.safeParse({
+            ...config,
+            [field]: config[field] + character,
+          }).success
+        ).toBe(false)
+      }
+      for (const field of ['label', 'group'] as const) {
+        expect(
+          footerConfigSchema.safeParse({
+            ...config,
+            links: [
+              {
+                ...config.links[0],
+                [field]: config.links[0][field] + character,
+              },
+            ],
+          }).success
+        ).toBe(false)
+      }
+    }
+  )
   it.each([
     undefined,
     '',

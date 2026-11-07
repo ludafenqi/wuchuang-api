@@ -75,7 +75,7 @@ export function FooterLinkEditor(props: {
                   <FormControl>
                     <Input
                       {...field}
-                      maxLength={{ label: 80, url: 2048, group: 40 }[name]}
+                      maxLength={{ label: 160, url: 2048, group: 80 }[name]}
                     />
                   </FormControl>
                   <FormMessage />

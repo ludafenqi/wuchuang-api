@@ -119,6 +119,30 @@ jobs:
       - name: Verify auth cache operations on a real six-node Redis Cluster
         run: bash .github/scripts/verify-redis-cluster.sh
 
+      - name: Verify atomic subscription refunds on three real databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${{ job.services.mysql.id }}" mysql -uroot -pdisposable-review-only -e 'CREATE DATABASE review_refunds;'
+          docker exec "${{ job.services.postgres.id }}" psql -U postgres -c 'CREATE DATABASE review_refunds;'
+          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review_refunds?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review_refunds?sslmode=disable'; do
+            SUBSCRIPTION_TEST_SQL_DSN="$dsn" go test ./model -run '^TestSubscriptionRefund|^TestSubscriptionDeltaValidation' -count=1 -v
+          done
+
+      - name: Verify billing settlement with independent logs on three real databases
+        env:
+          TEST_FIXED_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review_billing?parseTime=true'
+          TEST_FIXED_MYSQL_LOG_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review_billing_logs?parseTime=true'
+          TEST_FIXED_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review_billing sslmode=disable'
+          TEST_FIXED_POSTGRES_LOG_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review_billing_logs sslmode=disable'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec "${{ job.services.mysql.id }}" mysql -uroot -pdisposable-review-only -e 'CREATE DATABASE review_billing; CREATE DATABASE review_billing_logs;'
+          docker exec "${{ job.services.postgres.id }}" psql -U postgres -c 'CREATE DATABASE review_billing;'
+          docker exec "${{ job.services.postgres.id }}" psql -U postgres -c 'CREATE DATABASE review_billing_logs;'
+          go test ./service -run '^TestFixedPriceBillingDatabaseMatrix$|^TestSweepTimedOutTasksAtTheDefaultDeadline$' -count=1 -v
+
       - name: Verify relay failure accounting with independent logs on three real databases
         shell: bash
         run: |
