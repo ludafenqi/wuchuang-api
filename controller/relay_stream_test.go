@@ -16,6 +16,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -27,6 +28,135 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+type keepAliveFaultWriter struct {
+	gin.ResponseWriter
+	faulted   chan struct{}
+	formatted *atomic.Bool
+	armed     *atomic.Bool
+	once      sync.Once
+}
+
+func (w *keepAliveFaultWriter) Write(p []byte) (int, error) {
+	if strings.Contains(string(p), ": PING") && (w.armed == nil || w.armed.Load()) {
+		w.once.Do(func() {
+			_, _ = w.ResponseWriter.Write(p)
+			w.ResponseWriter.Flush()
+			defer close(w.faulted)
+			panic(relaySecretPanic{formatted: w.formatted})
+		})
+	}
+	return w.ResponseWriter.Write(p)
+}
+
+func TestKeepAlivePanicStopsUpstream(t *testing.T) {
+	previousMode := gin.Mode()
+	gin.SetMode(gin.ReleaseMode)
+	t.Cleanup(func() { gin.SetMode(previousMode) })
+	service.InitHttpClient()
+	var attempts atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		_, _ = io.WriteString(w, "data: ok\n\n")
+	}))
+	t.Cleanup(upstream.Close)
+	var formatted atomic.Bool
+	faulted, finished := make(chan struct{}), make(chan struct{})
+	engine := gin.New()
+	engine.Use(middleware.RelayPanicRecover())
+	engine.POST("/v1/messages", func(c *gin.Context) {
+		defer close(finished)
+		c.Writer = &keepAliveFaultWriter{ResponseWriter: c.Writer, faulted: faulted, formatted: &formatted}
+		stop := helper.StartStreamKeepAlive(c, time.Millisecond)
+		defer stop()
+		<-faulted
+		stop()
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, upstream.URL, strings.NewReader("{}"))
+		if err != nil {
+			panic(err)
+		}
+		resp, err := channel.DoRequest(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
+		if err != nil {
+			panic(err)
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(c.Writer, resp.Body)
+		helper.Done(c)
+	})
+	gateway := httptest.NewServer(engine)
+	t.Cleanup(gateway.Close)
+	client := &http.Client{Timeout: 4 * time.Second}
+	response, err := client.Post(gateway.URL+"/v1/messages", "application/json", strings.NewReader("{}"))
+	require.NoError(t, err)
+	body, readErr := io.ReadAll(response.Body)
+	require.NoError(t, response.Body.Close())
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		require.FailNow(t, "request owner did not exit")
+	}
+	assert.Zero(t, attempts.Load(), "a known keepalive panic must prevent the upstream request")
+	assert.Error(t, readErr, "already-started response must terminate abnormally")
+	assert.NotContains(t, string(body), "[DONE]")
+	assert.NotContains(t, string(body), "ROUND8_PANIC_SECRET")
+	assert.False(t, formatted.Load())
+}
+
+func TestKeepAlivePanicCancelsInflightRequest(t *testing.T) {
+	service.InitHttpClient()
+	var armed, formatted atomic.Bool
+	var attempts atomic.Int32
+	accepted, cancelled, finished, faulted := make(chan struct{}), make(chan struct{}), make(chan struct{}), make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		_, _ = io.Copy(io.Discard, r.Body)
+		close(accepted)
+		armed.Store(true)
+		<-r.Context().Done()
+		close(cancelled)
+	}))
+	t.Cleanup(func() { upstream.CloseClientConnections(); upstream.Close() })
+	engine := gin.New()
+	engine.Use(middleware.RelayPanicRecover())
+	engine.POST("/stream", func(c *gin.Context) {
+		defer close(finished)
+		c.Writer = &keepAliveFaultWriter{ResponseWriter: c.Writer, faulted: faulted, formatted: &formatted, armed: &armed}
+		stop := helper.StartStreamKeepAlive(c, time.Millisecond)
+		defer stop()
+		// Deliberately retain a separately created outbound context. The bridge
+		// must preserve it and still cancel a request already waiting for headers.
+		requestContext, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(requestContext, http.MethodPost, upstream.URL, strings.NewReader("{}"))
+		if err != nil {
+			panic(err)
+		}
+		resp, err := channel.DoRequest(c, req, &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}})
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		if err != nil {
+			panic(err)
+		}
+	})
+	gateway := httptest.NewServer(engine)
+	t.Cleanup(gateway.Close)
+	client := &http.Client{Timeout: 4 * time.Second}
+	response, err := client.Post(gateway.URL+"/stream", "application/json", strings.NewReader("{}"))
+	require.NoError(t, err)
+	_, readErr := io.ReadAll(response.Body)
+	require.NoError(t, response.Body.Close())
+	assert.Error(t, readErr)
+	for _, done := range []<-chan struct{}{accepted, cancelled, finished} {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			require.FailNow(t, "inflight request was not cancelled/joined")
+		}
+	}
+	assert.EqualValues(t, 1, attempts.Load())
+	assert.False(t, formatted.Load())
+}
 
 func TestRelayKeepAliveDuringImagePreparation(t *testing.T) {
 	settings := operation_setting.GetGeneralSetting()

@@ -147,13 +147,14 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 	}
 
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
-	if openaiErr != nil {
+	if openaiErr != nil && !info.StreamStatus.HasPanicUsage(usage, openaiErr) {
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr
 	}
 
 	service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
-	return nil
+	info.StreamStatus.MarkPanicUsageHandled()
+	return openaiErr
 }
 
 func GeminiEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {

@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -320,12 +322,26 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 	}
 }
 
+func sanitizeUpstreamURLForLog(rawURL string, info *common.RelayInfo) string {
+	var authNames []string
+	if info != nil && info.ChannelMeta != nil && info.ChannelOtherSettings.AdvancedCustom != nil {
+		// Conservatively protect every configured query auth name. Rematching
+		// here could disagree with an adaptor's already-resolved model route.
+		for _, route := range info.ChannelOtherSettings.AdvancedCustom.Routes {
+			if route.Auth != nil && strings.TrimSpace(route.Auth.Type) == dto.AdvancedCustomAuthTypeQuery {
+				authNames = append(authNames, route.Auth.Name)
+			}
+		}
+	}
+	return common.SanitizeURLForLog(rawURL, authNames...)
+}
+
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
 	fullRequestURL, err := a.GetRequestURL(info)
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
-	logger.LogDebug(c, "fullRequestURL: %s", common.SanitizeURLForLog(fullRequestURL))
+	logger.LogDebug(c, "fullRequestURL: %s", sanitizeUpstreamURLForLog(fullRequestURL, info))
 	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
@@ -353,7 +369,7 @@ func DoFormRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBod
 	if err != nil {
 		return nil, fmt.Errorf("get request url failed: %w", err)
 	}
-	logger.LogDebug(c, "fullRequestURL: %s", common.SanitizeURLForLog(fullRequestURL))
+	logger.LogDebug(c, "fullRequestURL: %s", sanitizeUpstreamURLForLog(fullRequestURL, info))
 	req, err := http.NewRequest(c.Request.Method, fullRequestURL, requestBody)
 	if err != nil {
 		return nil, fmt.Errorf("new request failed: %w", err)
@@ -426,7 +442,7 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 				_ = resp.Body.Close()
 			}
 		}
-		return nil, types.NewErrorWithStatusCode(fmt.Errorf("dial failed to %s: %w", common.SanitizeURLForLog(fullRequestURL), err), types.ErrorCodeDoRequestFailed, statusCode)
+		return nil, types.NewErrorWithStatusCode(fmt.Errorf("dial failed to %s: %w", sanitizeUpstreamURLForLog(fullRequestURL, info), err), types.ErrorCodeDoRequestFailed, statusCode)
 	}
 	return targetConn, nil
 }
@@ -448,6 +464,16 @@ func DoRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	return doRequest(c, req, info)
 }
 
+type keepAliveResponseBody struct {
+	io.ReadCloser
+	release func()
+}
+
+func (body *keepAliveResponseBody) Close() error {
+	defer body.release()
+	return body.ReadCloser.Close()
+}
+
 // keepUpstreamRedirectResponse stops net/http from following redirects while
 // returning the upstream 3xx response to the relay without an extra error.
 func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
@@ -455,6 +481,9 @@ func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
 }
 
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
+	if failure := helper.StreamKeepAliveError(c); failure != nil {
+		return nil, failure
+	}
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
 		return nil, fmt.Errorf("new proxy http client failed: %w", err)
@@ -485,14 +514,47 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 		}
 	}
 
+	if failure := helper.StreamKeepAliveError(c); failure != nil {
+		return nil, failure
+	}
+	// Preserve the outbound context's values/deadline. Only link cancellation;
+	// keep the link alive through response-body consumption, not merely headers.
+	var release func()
+	if keepAlive := helper.StreamKeepAliveContext(c); keepAlive != nil {
+		ctx, cancel := context.WithCancel(req.Context())
+		stop := context.AfterFunc(keepAlive, cancel)
+		if keepAlive.Err() != nil {
+			cancel()
+		}
+		req = req.WithContext(ctx)
+		release = func() { stop(); cancel() }
+	}
+	defer func() {
+		if release != nil {
+			release()
+		}
+	}()
 	common2.SetContextKey(c, appconstant.ContextKeyUpstreamRequestOrigin, req.URL.Scheme+"://"+req.URL.Host)
 	resp, err := relayClient.Do(req)
 	if err != nil {
-		logger.LogError(c, common2.LogText("do request failed: %s", err.Error()))
+		logError := err
+		var urlError *url.Error
+		if errors.As(err, &urlError) {
+			// Sanitize a copy: fragments and malformed URL parts must not leak
+			// through url.Error, and logging must not alter the returned error.
+			redacted := *urlError
+			redacted.URL = sanitizeUpstreamURLForLog(urlError.URL, info)
+			logError = &redacted
+		}
+		logger.LogError(c, common2.LogText("do request failed: %s", common2.MaskSensitiveInfo(logError.Error(), common2.UpstreamAddresses(c)...)))
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
+	}
+	if release != nil {
+		resp.Body = &keepAliveResponseBody{ReadCloser: resp.Body, release: release}
+		release = nil
 	}
 	if common2.DebugEnabled {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)

@@ -56,6 +56,39 @@ func TestSanitizeURLForLogKeepsURLWithoutSensitiveQuery(t *testing.T) {
 	assert.Equal(t, rawURL, got)
 }
 
+func TestSanitizeURLForLogMasksUnknownQueryValuesByDefault(t *testing.T) {
+	got := SanitizeURLForLog("https://example.test/path?opaque=ROUND5_FIRST_SECRET&%6fpaque=ROUND5_SECOND_SECRET&custom_ticket=ROUND5_TICKET_SECRET&model=gpt-test&alt=sse&api-version=2024-02-01")
+	parsed, err := url.Parse(got)
+	require.NoError(t, err)
+	assert.Equal(t, "***masked***", parsed.Query().Get("opaque"))
+	assert.Len(t, parsed.Query()["opaque"], 1)
+	assert.Equal(t, "***masked***", parsed.Query().Get("custom_ticket"))
+	assert.Equal(t, "gpt-test", parsed.Query().Get("model"))
+	assert.Equal(t, "sse", parsed.Query().Get("alt"))
+	assert.Equal(t, "2024-02-01", parsed.Query().Get("api-version"))
+	for _, secret := range []string{"ROUND5_FIRST_SECRET", "ROUND5_SECOND_SECRET", "ROUND5_TICKET_SECRET"} {
+		assert.NotContains(t, got, secret)
+	}
+}
+
+func TestSanitizeURLForLogFailsClosedForCredentialsAndMalformedURLs(t *testing.T) {
+	for _, rawURL := range []string{
+		"https://fixture-user:fixture-password@example.test/path?alt=sse",
+		"https://example.test/path?key=fixture-secret%ZZ&alt=sse",
+		"https://example.test/path?token=fixture-secret;alt=sse",
+		"https://example.test/path#access_token=fixture-secret",
+		"https://example.test/%ZZ?key=fixture-secret",
+	} {
+		t.Run(rawURL, func(t *testing.T) {
+			got := SanitizeURLForLog(rawURL)
+			assert.NotContains(t, got, "fixture-secret")
+			assert.NotContains(t, got, "fixture-password")
+			assert.NotContains(t, got, "fixture-user")
+			assert.NotEmpty(t, got)
+		})
+	}
+}
+
 func TestValidateMultipartDirectNormalizesImageField(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	body := strings.NewReader(`{"model":"wan2.7-i2v","prompt":"animate","image":" https://example.com/first.png "}`)

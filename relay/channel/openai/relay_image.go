@@ -189,7 +189,7 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 			info.UpdateImageCount(completedImages)
 		}
 	}
-	return usage, nil
+	return usage, info.StreamStatus.PanicError()
 }
 
 // writeOpenaiImageStreamChunk rebuilds the SSE frame for an image stream chunk:

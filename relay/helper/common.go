@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
@@ -24,6 +26,38 @@ type streamKeepAliveWriter struct {
 	cancel      context.CancelFunc
 	done        chan struct{}
 	pingContext *gin.Context
+	failure     *relaycommon.StreamStatus
+	failRequest context.CancelCauseFunc
+}
+
+type keepAliveContextKey struct{}
+
+var errKeepAlivePanic = errors.New("request keepalive failed")
+
+// StreamKeepAliveError only reads locally recorded heartbeat failures, never
+// arbitrary request cancellation causes or errors supplied by an upstream.
+func StreamKeepAliveError(c *gin.Context) *types.NewAPIError {
+	if c == nil || c.Request == nil {
+		return nil
+	}
+	writer, _ := c.Request.Context().Value(keepAliveContextKey{}).(*streamKeepAliveWriter)
+	if writer == nil {
+		return nil
+	}
+	return writer.failure.PanicError()
+}
+
+func StreamKeepAliveContext(c *gin.Context) context.Context {
+	if c != nil && c.Request != nil && c.Request.Context().Value(keepAliveContextKey{}) != nil {
+		return c.Request.Context()
+	}
+	return nil
+}
+
+func (writer *streamKeepAliveWriter) checkFailure() {
+	if writer.failure.PanicError() != nil {
+		panic(errKeepAlivePanic)
+	}
 }
 
 func (writer *streamKeepAliveWriter) stop() {
@@ -37,26 +71,31 @@ func (writer *streamKeepAliveWriter) Unwrap() http.ResponseWriter {
 
 func (writer *streamKeepAliveWriter) Write(data []byte) (int, error) {
 	writer.stop()
+	writer.checkFailure()
 	return writer.ResponseWriter.Write(data)
 }
 
 func (writer *streamKeepAliveWriter) WriteString(data string) (int, error) {
 	writer.stop()
+	writer.checkFailure()
 	return writer.ResponseWriter.WriteString(data)
 }
 
 func (writer *streamKeepAliveWriter) WriteHeader(status int) {
 	writer.stop()
+	writer.checkFailure()
 	writer.ResponseWriter.WriteHeader(status)
 }
 
 func (writer *streamKeepAliveWriter) WriteHeaderNow() {
 	writer.stop()
+	writer.checkFailure()
 	writer.ResponseWriter.WriteHeaderNow()
 }
 
 func (writer *streamKeepAliveWriter) Flush() {
 	writer.stop()
+	writer.checkFailure()
 	writer.ResponseWriter.Flush()
 }
 
@@ -87,6 +126,9 @@ func (writer *streamKeepAliveWriter) ping() error {
 // StartStreamKeepAlive 按 interval 发送心跳，覆盖请求准备和重试；业务写入开始后交给流处理器。
 // 内层请求复用外层的保活，内层清理不会提前结束它。
 func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
+	if StreamKeepAliveError(c) != nil {
+		panic(errKeepAlivePanic)
+	}
 	if previous, ok := c.Writer.(*streamKeepAliveWriter); ok {
 		select {
 		case <-previous.done:
@@ -102,11 +144,14 @@ func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
 		interval = DefaultPingInterval
 	}
 	SetEventStreamHeaders(c)
+	requestContext, failRequest := context.WithCancelCause(c.Request.Context())
+	writer := &streamKeepAliveWriter{ResponseWriter: c.Writer, done: make(chan struct{}), failure: relaycommon.NewStreamStatus(), failRequest: failRequest}
+	c.Request = c.Request.WithContext(context.WithValue(requestContext, keepAliveContextKey{}, writer))
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 120*time.Minute)
 	pingContext := c.Copy()
 	// 心跳使用原 writer，业务写入才会触发交接。
 	pingContext.Writer = c.Writer
-	writer := &streamKeepAliveWriter{ResponseWriter: c.Writer, cancel: cancel, done: make(chan struct{}), pingContext: pingContext}
+	writer.cancel, writer.pingContext = cancel, pingContext
 	c.Writer = writer
 	go writer.keepAlive(ctx, interval)
 	return writer.stop
@@ -117,7 +162,9 @@ func (writer *streamKeepAliveWriter) keepAlive(ctx context.Context, interval tim
 	defer writer.cancel()
 	defer func() {
 		if recovered := recover(); recovered != nil {
-			logger.LogDebug(writer.pingContext, "SSE ping goroutine panic recovered: %v", recovered)
+			writer.failure.MarkPanic()
+			writer.failRequest(errKeepAlivePanic)
+			logger.LogPanic(writer.pingContext, recovered, "request keepalive")
 		}
 	}()
 	ticker := time.NewTicker(interval)
@@ -128,6 +175,9 @@ func (writer *streamKeepAliveWriter) keepAlive(ctx context.Context, interval tim
 			return
 		case <-ticker.C:
 			if ctx.Err() != nil || writer.ping() != nil {
+				if writer.failure.PanicError() != nil {
+					writer.failRequest(errKeepAlivePanic)
+				}
 				return
 			}
 		}
@@ -137,7 +187,21 @@ func (writer *streamKeepAliveWriter) keepAlive(ctx context.Context, interval tim
 func FlushWriter(c *gin.Context) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("flush panic recovered: %v", r)
+			if c != nil && c.Request != nil {
+				if writer, ok := c.Request.Context().Value(keepAliveContextKey{}).(*streamKeepAliveWriter); ok {
+					select {
+					case <-writer.done:
+					default:
+						writer.failure.MarkPanic()
+						writer.failRequest(errKeepAlivePanic)
+					}
+				}
+			}
+			if status, ok := common.GetContextKeyType[*relaycommon.StreamStatus](c, constant.ContextKeyResponseStreamStatus); ok {
+				status.MarkPanic()
+			}
+			logger.LogPanic(c, r, "stream flush")
+			err = errors.New("stream flush failed")
 		}
 	}()
 

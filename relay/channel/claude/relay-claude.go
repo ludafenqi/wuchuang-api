@@ -347,6 +347,9 @@ func ClaudeStreamHandler(c *gin.Context, resp *http.Response, info *relaycommon.
 		}
 	})
 	info.StreamStatus.RequireTerminal()
+	if panicErr := info.StreamStatus.PanicError(); panicErr != nil {
+		return claudeInfo.Usage, panicErr
+	}
 	if err != nil {
 		return nil, err
 	}

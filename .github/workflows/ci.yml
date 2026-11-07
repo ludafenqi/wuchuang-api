@@ -22,7 +22,7 @@ jobs:
     name: Backend vet, build, and test
     if: github.event.action != 'closed' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     env:
       GOWORK: 'off'
     services:
@@ -142,6 +142,17 @@ jobs:
           docker exec "${{ job.services.postgres.id }}" psql -U postgres -c 'CREATE DATABASE review_billing;'
           docker exec "${{ job.services.postgres.id }}" psql -U postgres -c 'CREATE DATABASE review_billing_logs;'
           go test ./service -run '^TestFixedPriceBillingDatabaseMatrix$|^TestSweepTimedOutTasksAtTheDefaultDeadline$' -count=1 -v
+
+      - name: Verify relay failure accounting with independent logs on three real databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
+            TEST_RELAY_PANIC_SQL_DSN="$dsn" go test ./controller -run '^Test(RelayPanicPreservesAccounting|RelayStreamPanicPreservesUsageSettlement|StreamPanicDoesNotAddRefundAfterAccountingAttempt|RealtimePanicPreservesActualAccounting|KeepAlivePanicPreservesReservationBoundary)$' -count=1 -timeout=180s -v
+          done
+
+      - name: Verify stream concurrency under the race detector
+        run: go test -race ./controller ./relay/helper ./relay/channel/openai -run '^Test(RealtimeReadersPropagateFailureAndJoin|RealtimePanicPreservesActualAccounting|StreamScannerPanicSafety|StreamScannerPanicIO|KeepAlivePanicStopsUpstream|KeepAlivePanicCancelsInflightRequest)$' -count=1 -timeout=180s
 
       - name: Verify channel creation and rollback on three real databases
         shell: bash

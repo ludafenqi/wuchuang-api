@@ -2,6 +2,7 @@
 # 中文（繁體）翻譯檔案
 
 # Errors returned to AI clients
+common.internal_server_error: "伺服器內部錯誤。請在此提交問題：https://github.com/Calcium-Ion/new-api"
 common.database_error: "資料庫出錯，請聯繫管理員"
 auth.user_banned: "使用者已被封禁"
 token.get_info_failed: "獲取令牌資訊失敗，請稍後重試"
