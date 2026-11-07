@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -100,8 +101,19 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			// Seed legacy content using the existing Option schema, then add structured data.
 			require.NoError(t, UpdateOption("Footer", "<p>Existing HTML</p>"))
 			require.NoError(t, UpdateOption("About", "Original about content"))
+			var unicodeConfig system_setting.FooterConfig
+			require.NoError(t, common.UnmarshalJsonStr(validFooterConfig, &unicodeConfig))
+			unicodeConfig.Description = strings.Repeat("😀", 500)
+			unicodeConfig.Copyright = strings.Repeat("😀", 200)
+			unicodeConfig.Links = []system_setting.FooterLink{{ID: "unicode", Label: strings.Repeat("😀", 80), Group: strings.Repeat("😀", 40), URL: "/pricing", Visible: true, Source: "custom"}}
+			encoded, err := common.Marshal(struct {
+				system_setting.FooterConfig
+				OpenSourceNotice string `json:"openSourceNotice"`
+			}{unicodeConfig, "## Credits\n[Source](https://example.com/source)"})
+			require.NoError(t, err)
+			matrixConfig := string(encoded)
 			for range 2 {
-				require.NoError(t, UpdateOption(system_setting.FooterConfigKey, validFooterConfig))
+				require.NoError(t, UpdateOption(system_setting.FooterConfigKey, matrixConfig))
 			}
 			options, err := AllOption()
 			require.NoError(t, err)
@@ -109,7 +121,7 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			for _, option := range options {
 				stored[option.Key] = option.Value
 			}
-			assert.Equal(t, validFooterConfig, stored[system_setting.FooterConfigKey])
+			assert.Equal(t, matrixConfig, stored[system_setting.FooterConfigKey])
 			assert.Equal(t, "<p>Existing HTML</p>", stored["Footer"])
 			assert.Equal(t, "Original about content", stored["About"])
 			assert.Equal(t, stored[system_setting.FooterConfigKey], common.OptionMap[system_setting.FooterConfigKey])
@@ -124,7 +136,7 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 			assert.Error(t, UpdateOptionsBulk(map[string]string{"SystemName": "Unsaved brand", system_setting.FooterConfigKey: ""}))
 			assert.Equal(t, 2, writes)
 			assert.Equal(t, "Saved brand", common.SystemName)
-			assert.Equal(t, validFooterConfig, common.OptionMap[system_setting.FooterConfigKey])
+			assert.Equal(t, matrixConfig, common.OptionMap[system_setting.FooterConfigKey])
 			var afterFailure []Option
 			require.NoError(t, db.Find(&afterFailure).Error)
 			for _, option := range afterFailure {
@@ -132,7 +144,7 @@ func TestFooterOptionDatabaseMatrix(t *testing.T) {
 					assert.Equal(t, "Saved brand", option.Value)
 				}
 				if option.Key == system_setting.FooterConfigKey {
-					assert.Equal(t, validFooterConfig, option.Value)
+					assert.Equal(t, matrixConfig, option.Value)
 				}
 			}
 			require.NoError(t, db.Callback().Update().Remove("footer:batch_failure"))
