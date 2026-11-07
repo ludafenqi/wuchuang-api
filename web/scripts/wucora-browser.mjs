@@ -491,6 +491,9 @@ try {
           .locator('xpath=ancestor::td')
           .getByText('0', { exact: true })
           .waitFor()
+        await page
+          .locator('[role="alertdialog"]')
+          .waitFor({ state: 'detached' })
         assert.equal(mutations.length, 2)
         page.off('request', recordMutation)
         assert.equal(
