@@ -1,24 +1,24 @@
-name: WuCora PR14 image preparation (no publication)
+name: WuCora merged main image verification (no publication)
 on:
   push:
-    branches: [codex/wucora-image-pr14-519747cd4-20261108]
+    branches: [codex/wucora-image-main-fe24147d-20261108]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: wucora-image-preparation-pr14-519747cd4
+  group: wucora-image-preparation-main-fe24147d
   cancel-in-progress: false
 jobs:
   image:
-    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-image-pr14-519747cd4-20261108'
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-image-main-fe24147d-20261108'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       DOCKER_BUILD_RECORD_UPLOAD: 'false'
       DOCKER_BUILD_SUMMARY: 'false'
-      PRODUCT_SHA: 519747cd46092fc19d47fa2c7dcf8608b469c9cf
+      PRODUCT_SHA: fe24147d2e105f570f0a80e669d708d54a3e7efd
       PRODUCT_TREE: 3ecdf82840d95f17bf1920b7ea8e51ae91ca58e1
-      IMAGE: wucora-review:sha-519747cd46092fc19d47fa2c7dcf8608b469c9cf
+      IMAGE: wucora-review:sha-fe24147d2e105f570f0a80e669d708d54a3e7efd
     steps:
       - name: Checkout verification workflow source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -29,7 +29,7 @@ jobs:
       - name: Checkout exact product commit
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
-          ref: 519747cd46092fc19d47fa2c7dcf8608b469c9cf
+          ref: fe24147d2e105f570f0a80e669d708d54a3e7efd
           path: product
           persist-credentials: false
       - name: Record clean product context and exact Git trees
@@ -50,11 +50,12 @@ jobs:
           git -C product rev-parse HEAD^{tree} > "$RUNNER_TEMP/image-evidence/product-tree.txt"
           git -C product ls-files -s > "$RUNNER_TEMP/image-evidence/product-index.txt"
           git -C product status --porcelain --untracked-files=all --ignored > "$RUNNER_TEMP/image-evidence/build-context-status.txt"
-          cp product/Dockerfile product/.dockerignore "$RUNNER_TEMP/image-evidence/"
+          cp product/Dockerfile "$RUNNER_TEMP/image-evidence/"
+          cp product/.dockerignore "$RUNNER_TEMP/image-evidence/dockerignore.txt"
           docker version > "$RUNNER_TEMP/image-evidence/docker-version.txt"
       - name: Set up Docker buildx
         uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
-      - name: Build exact candidate locally without pushing
+      - name: Build exact merged main locally without pushing
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
         with:
@@ -64,12 +65,12 @@ jobs:
           load: true
           push: false
           provenance: false
-          tags: wucora-review:sha-519747cd46092fc19d47fa2c7dcf8608b469c9cf
+          tags: wucora-review:sha-fe24147d2e105f570f0a80e669d708d54a3e7efd
           build-args: |
-            SOURCE_REVISION=519747cd46092fc19d47fa2c7dcf8608b469c9cf
+            SOURCE_REVISION=fe24147d2e105f570f0a80e669d708d54a3e7efd
           labels: |
             org.opencontainers.image.source=https://github.com/ludafenqi/wuchuang-api
-            org.opencontainers.image.revision=519747cd46092fc19d47fa2c7dcf8608b469c9cf
+            org.opencontainers.image.revision=fe24147d2e105f570f0a80e669d708d54a3e7efd
       - name: Inspect packaged image, verify Git-blob licenses and start isolated containers
         shell: bash
         run: bash automation/.github/scripts/image-preparation.sh start
@@ -103,13 +104,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: image-preparation-519747cd46092fc19d47fa2c7dcf8608b469c9cf-${{ github.run_id }}
+          name: image-preparation-fe24147d2e105f570f0a80e669d708d54a3e7efd-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/image-evidence/*.json
             ${{ runner.temp }}/image-evidence/*.txt
             ${{ runner.temp }}/image-evidence/*.log
             ${{ runner.temp }}/image-evidence/Dockerfile
-            ${{ runner.temp }}/image-evidence/.dockerignore
             ${{ runner.temp }}/image-evidence/licenses/
             ${{ runner.temp }}/image-evidence/browser/*.png
             ${{ runner.temp }}/image-evidence/browser/result.json
