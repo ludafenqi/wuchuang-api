@@ -42,6 +42,27 @@ await new Promise((resolve) => portServer.listen(0, '127.0.0.1', resolve))
 const backendPort = portServer.address().port
 await new Promise((resolve) => portServer.close(resolve))
 const backend = `http://127.0.0.1:${backendPort}`
+const upstream = http.createServer((req, res) => {
+  req.resume()
+  res.setHeader('Content-Type', 'application/json')
+  res.end(
+    JSON.stringify({
+      id: 'local-affinity-fixture',
+      object: 'chat.completion',
+      model: 'gpt-4o-mini',
+      created: 1,
+      choices: [
+        {
+          index: 0,
+          message: { role: 'assistant', content: 'local fixture' },
+          finish_reason: 'stop',
+        },
+      ],
+      usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+    })
+  )
+})
+await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve))
 const log = fs.openSync(path.join(runtime, 'gateway.log'), 'w')
 const app = spawn(gateway, [], {
   cwd: runtime,
@@ -78,6 +99,11 @@ server.on('request', (req, res) => {
       }
     )
     proxy.on('error', () => {
+      if (res.destroyed || res.writableEnded) return
+      if (res.headersSent) {
+        res.destroy()
+        return
+      }
       res.writeHead(502)
       res.end()
     })
@@ -179,7 +205,7 @@ try {
           type: 1,
           name: 'LOCAL UI FIXTURE',
           key: 'sk-fictional-ui-only',
-          base_url: 'http://127.0.0.1:1',
+          base_url: `http://127.0.0.1:${upstream.address().port}`,
           models: 'gpt-4o-mini',
           group: 'default',
           status: 1,
@@ -187,7 +213,30 @@ try {
       },
     })
     .then((response) => response.json())
-  assert.ok(channel.success, 'Create the uncontacted local catalog fixture')
+  assert.ok(channel.success, 'Create the local catalog and affinity fixture')
+  const tokenCreated = await seed.request
+    .post(`${origin}/api/token/`, {
+      data: {
+        name: 'local-affinity-fixture',
+        expired_time: -1,
+        unlimited_quota: true,
+        group: 'default',
+      },
+    })
+    .then((response) => response.json())
+  assert.equal(tokenCreated.success, true, 'Create a disposable relay token')
+  const tokens = await seed.request
+    .get(`${origin}/api/token/`)
+    .then((response) => response.json())
+  const tokenID = tokens.data.items.find(
+    (item) => item.name === 'local-affinity-fixture'
+  )?.id
+  assert.equal(typeof tokenID, 'number')
+  const relayToken = await seed.request
+    .post(`${origin}/api/token/${tokenID}/key`)
+    .then((response) => response.json())
+  assert.equal(relayToken.success, true)
+  const relayKey = relayToken.data.key
   await seed.close()
   for (const theme of logoutOnly ? ['light'] : ['light', 'dark']) {
     for (const width of logoutOnly ? [1440] : [1440, 390, 320]) {
@@ -293,6 +342,178 @@ try {
           width,
           status: 'PASS',
           scope: 'real local account, authenticated layout',
+        })
+      }
+      if (!logoutOnly) {
+        const routingRoute = '/system-settings/request-policies/routing'
+        const headers = { Authorization: `Bearer ${login.data.access_token}` }
+        const rules = [
+          { name: 'WuCora session', key: 'X-Wucora-Session' },
+          { name: 'Other session', key: 'X-Other-Session' },
+        ].map(({ name, key }) => ({
+          name,
+          model_regex: ['^gpt-4o-mini$'],
+          path_regex: [],
+          key_sources: [{ type: 'request_header', key }],
+          ttl_seconds: 3600,
+          session_mode: 'prefer',
+          include_rule_name: true,
+          include_model_name: false,
+          include_using_group: false,
+        }))
+        const configured = await context.request
+          .patch(`${origin}/api/option/request_policy`, {
+            headers,
+            data: {
+              options: {
+                'channel_affinity_setting.enabled': 'true',
+                'channel_affinity_setting.session_mode': 'prefer',
+                'channel_affinity_setting.rules': JSON.stringify(rules),
+              },
+            },
+          })
+          .then((response) => response.json())
+        assert.equal(configured.success, true, 'Save real session rules')
+        await context.request.delete(
+          `${origin}/api/option/channel_affinity_cache?all=true`,
+          { headers }
+        )
+        for (const key of ['X-Wucora-Session', 'X-Other-Session']) {
+          // Tokens stay in memory; request-client failure logs must not expose them.
+          const response = await fetch(`${backend}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${relayKey}`,
+              'Content-Type': 'application/json',
+              [key]: `session-${width}-${theme}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: 'local fixture' }],
+              max_tokens: 8,
+            }),
+          })
+          assert.equal(
+            response.status,
+            200,
+            'Local relay request must create a real session binding'
+          )
+          assert.equal((await response.json()).object, 'chat.completion')
+        }
+        await page.goto(origin + routingRoute)
+        const clearRule = page.getByRole('button', {
+          name: 'Clear cache for WuCora session',
+          exact: true,
+        })
+        const otherRule = page.getByRole('button', {
+          name: 'Clear cache for Other session',
+          exact: true,
+        })
+        await clearRule.waitFor()
+        const cacheCell = clearRule.locator('xpath=ancestor::td')
+        const stats = await context.request
+          .get(`${origin}/api/option/channel_affinity_cache`, { headers })
+          .then((response) => response.json())
+        assert.equal(
+          stats.data.by_rule_name['WuCora session'],
+          1,
+          'First rule has a real cached binding'
+        )
+        assert.equal(
+          stats.data.by_rule_name['Other session'],
+          1,
+          'Second rule has a real cached binding'
+        )
+        await cacheCell.getByText('1', { exact: true }).waitFor()
+        assert.equal(await clearRule.isEnabled(), true)
+        const mutations = []
+        const recordMutation = (request) => {
+          if (
+            request.method() === 'DELETE' &&
+            new URL(request.url()).pathname ===
+              '/api/option/channel_affinity_cache'
+          ) {
+            mutations.push(new URL(request.url()).search)
+          }
+        }
+        page.on('request', recordMutation)
+        await page
+          .getByRole('button', {
+            name: 'Refresh cache statistics',
+            exact: true,
+          })
+          .click()
+        await clearRule.click()
+        const confirmation = page.getByRole('alertdialog', {
+          name: 'Confirm clearing cache for this rule',
+        })
+        await confirmation
+          .getByRole('button', { name: 'Cancel', exact: true })
+          .click()
+        assert.deepEqual(
+          mutations,
+          [],
+          'Refresh and cancel must leave cache bindings intact'
+        )
+        await clearRule.click()
+        await confirmation
+          .getByRole('button', { name: 'Clear cache', exact: true })
+          .click()
+        await cacheCell.getByText('0', { exact: true }).waitFor()
+        await otherRule
+          .locator('xpath=ancestor::td')
+          .getByText('1', { exact: true })
+          .waitFor()
+        assert.deepEqual(mutations, ['?rule_name=WuCora+session'])
+        await page
+          .getByRole('button', { name: 'Clear All Cache', exact: true })
+          .click()
+        const clearAll = page.getByRole('alertdialog', {
+          name: 'Confirm clearing all channel affinity cache',
+        })
+        assert.equal(
+          await clearAll.evaluate(
+            (element) =>
+              element.getBoundingClientRect().right <= innerWidth + 1 &&
+              element.getBoundingClientRect().left >= -1
+          ),
+          true
+        )
+        await page.screenshot({
+          path: path.join(output, `affinity-confirm-${width}-${theme}.png`),
+          fullPage: true,
+          animations: 'disabled',
+        })
+        await clearAll
+          .getByRole('button', { name: 'Clear All Cache', exact: true })
+          .click()
+        await otherRule
+          .locator('xpath=ancestor::td')
+          .getByText('0', { exact: true })
+          .waitFor()
+        await page
+          .locator('[role="alertdialog"]')
+          .waitFor({ state: 'detached' })
+        assert.equal(mutations.length, 2)
+        page.off('request', recordMutation)
+        assert.equal(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1
+          ),
+          true,
+          `Session rules overflow at ${width}/${theme}`
+        )
+        await page.screenshot({
+          path: path.join(output, `affinity-rules-${width}-${theme}.png`),
+          fullPage: true,
+        })
+        results.push({
+          route: routingRoute,
+          theme,
+          width,
+          status: 'PASS',
+          scope:
+            'real saved rules and local relay bindings: refresh/cancel preserve both, per-rule clear preserves other binding, clear-all removes it; responsive screenshots',
         })
       }
       if (!logoutOnly) {
@@ -549,6 +770,7 @@ try {
   await browser?.close()
   app.kill()
   server.close()
+  upstream.close()
   fs.closeSync(log)
   fs.writeFileSync(
     path.join(output, 'result.json'),
