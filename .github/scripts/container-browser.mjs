@@ -22,18 +22,32 @@ import path from 'node:path'
 
 import { chromium, request } from 'playwright'
 
-// Uses only the real, disposable Docker container and its embedded frontend.
+// All browser and API traffic targets the packaged gateway container.
 const root = process.env.PRODUCT_SHA
 const output = path.resolve(process.env.UI_REPORT_DIR)
 const origin = process.env.CONTAINER_ORIGIN
 assert.match(origin, /^http:\/\/172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+:3000$/)
 const backend = origin
+const mockOrigin = process.env.MOCK_UPSTREAM_ORIGIN
+assert.equal(mockOrigin, 'http://wucora-image-mock:8080')
 const assets = 'embedded in container /new-api'
 const logoutOnly = false
 fs.mkdirSync(output, { recursive: true })
+
+function safeErrorMessage(error) {
+  return String(error.message || error)
+    .split('\n')[0]
+    .replace(/Bearer\s+\S+/gi, 'Bearer [redacted]')
+    .replace(
+      /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+      '[redacted JWT]'
+    )
+}
+
 const results = []
 const errors = []
 let browser
+let stage = 'setup'
 try {
   await new Promise((resolve, reject) => {
     const start = Date.now()
@@ -92,7 +106,7 @@ try {
           type: 1,
           name: 'LOCAL UI FIXTURE',
           key: 'sk-fictional-ui-only',
-          base_url: 'http://127.0.0.1:1',
+          base_url: mockOrigin,
           models: 'gpt-4o-mini',
           group: 'default',
           status: 1,
@@ -100,7 +114,31 @@ try {
       },
     })
     .then((response) => response.json())
-  assert.ok(channel.success, 'Create the uncontacted local catalog fixture')
+  assert.ok(channel.success, 'Create the local catalog and affinity fixture')
+  stage = 'create-relay-token'
+  const tokenCreated = await seed.request
+    .post(`${origin}/api/token/`, {
+      data: {
+        name: 'local-affinity-fixture',
+        expired_time: -1,
+        unlimited_quota: true,
+        group: 'default',
+      },
+    })
+    .then((response) => response.json())
+  assert.equal(tokenCreated.success, true, 'Create a disposable relay token')
+  const tokens = await seed.request
+    .get(`${origin}/api/token/`)
+    .then((response) => response.json())
+  const tokenID = tokens.data.items.find(
+    (item) => item.name === 'local-affinity-fixture'
+  )?.id
+  assert.equal(typeof tokenID, 'number')
+  const relayToken = await seed.request
+    .post(`${origin}/api/token/${tokenID}/key`)
+    .then((response) => response.json())
+  assert.equal(relayToken.success, true)
+  const relayKey = relayToken.data.key
   await seed.close()
   for (const theme of logoutOnly ? ['light'] : ['light', 'dark']) {
     for (const width of logoutOnly ? [1440] : [1440, 390, 320]) {
@@ -120,7 +158,12 @@ try {
       )
       const page = await context.newPage()
       page.on('pageerror', (error) =>
-        errors.push({ theme, width, url: page.url(), message: error.message })
+        errors.push({
+          theme,
+          width,
+          url: page.url(),
+          message: safeErrorMessage(error),
+        })
       )
       for (const route of logoutOnly
         ? []
@@ -209,6 +252,204 @@ try {
         })
       }
       if (!logoutOnly) {
+        stage = `affinity-${width}-${theme}`
+        const routingRoute = '/system-settings/request-policies/routing'
+        const headers = { Authorization: `Bearer ${login.data.access_token}` }
+        const rules = [
+          { name: 'WuCora session', key: 'X-Wucora-Session' },
+          { name: 'Other session', key: 'X-Other-Session' },
+        ].map(({ name, key }) => ({
+          name,
+          model_regex: ['^gpt-4o-mini$'],
+          path_regex: [],
+          key_sources: [{ type: 'request_header', key }],
+          ttl_seconds: 3600,
+          session_mode: 'prefer',
+          include_rule_name: true,
+          include_model_name: false,
+          include_using_group: false,
+        }))
+        const configured = await context.request
+          .patch(`${origin}/api/option/request_policy`, {
+            headers,
+            data: {
+              options: {
+                'channel_affinity_setting.enabled': 'true',
+                'channel_affinity_setting.session_mode': 'prefer',
+                'channel_affinity_setting.rules': JSON.stringify(rules),
+              },
+            },
+          })
+          .then((response) => response.json())
+        assert.equal(configured.success, true, 'Save real session rules')
+        await context.request.delete(
+          `${origin}/api/option/channel_affinity_cache?all=true`,
+          { headers }
+        )
+        for (const key of ['X-Wucora-Session', 'X-Other-Session']) {
+          // Tokens stay in memory; request-client failure logs must not expose them.
+          const response = await fetch(`${backend}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${relayKey}`,
+              'Content-Type': 'application/json',
+              [key]: `session-${width}-${theme}`,
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              messages: [{ role: 'user', content: 'local fixture' }],
+              max_tokens: 8,
+            }),
+          })
+          assert.equal(
+            response.status,
+            200,
+            'Local relay request must create a real session binding'
+          )
+          assert.equal((await response.json()).object, 'chat.completion')
+        }
+        await page.goto(origin + routingRoute)
+        const clearRule = page.getByRole('button', {
+          name: 'Clear cache for WuCora session',
+          exact: true,
+        })
+        const otherRule = page.getByRole('button', {
+          name: 'Clear cache for Other session',
+          exact: true,
+        })
+        await clearRule.waitFor()
+        const cacheCell = clearRule.locator('xpath=ancestor::td')
+        const stats = await context.request
+          .get(`${origin}/api/option/channel_affinity_cache`, { headers })
+          .then((response) => response.json())
+        assert.equal(
+          stats.data.by_rule_name['WuCora session'],
+          1,
+          'First rule has a real cached binding'
+        )
+        assert.equal(
+          stats.data.by_rule_name['Other session'],
+          1,
+          'Second rule has a real cached binding'
+        )
+        await cacheCell.getByText('1', { exact: true }).waitFor()
+        assert.equal(await clearRule.isEnabled(), true)
+        const mutations = []
+        const recordMutation = (request) => {
+          if (
+            request.method() === 'DELETE' &&
+            new URL(request.url()).pathname ===
+              '/api/option/channel_affinity_cache'
+          ) {
+            mutations.push(new URL(request.url()).search)
+          }
+        }
+        page.on('request', recordMutation)
+        await page
+          .getByRole('button', {
+            name: 'Refresh cache statistics',
+            exact: true,
+          })
+          .click()
+        await clearRule.click()
+        const confirmation = page.getByRole('alertdialog', {
+          name: 'Confirm clearing cache for this rule',
+        })
+        await confirmation
+          .getByRole('button', { name: 'Cancel', exact: true })
+          .click()
+        assert.deepEqual(
+          mutations,
+          [],
+          'Refresh and cancel must leave cache bindings intact'
+        )
+        await clearRule.click()
+        await confirmation
+          .getByRole('button', { name: 'Clear cache', exact: true })
+          .click()
+        await cacheCell.getByText('0', { exact: true }).waitFor()
+        await otherRule
+          .locator('xpath=ancestor::td')
+          .getByText('1', { exact: true })
+          .waitFor()
+        const afterRuleStats = await context.request
+          .get(origin + '/api/option/channel_affinity_cache', { headers })
+          .then((response) => response.json())
+        assert.equal(afterRuleStats.data.by_rule_name['WuCora session'], 0)
+        assert.equal(afterRuleStats.data.by_rule_name['Other session'], 1)
+        assert.deepEqual(mutations, ['?rule_name=WuCora+session'])
+        await page
+          .getByRole('button', { name: 'Clear All Cache', exact: true })
+          .click()
+        const clearAll = page.getByRole('alertdialog', {
+          name: 'Confirm clearing all channel affinity cache',
+        })
+        assert.equal(
+          await clearAll.evaluate(
+            (element) =>
+              element.getBoundingClientRect().right <= innerWidth + 1 &&
+              element.getBoundingClientRect().left >= -1
+          ),
+          true
+        )
+        await page.screenshot({
+          path: path.join(output, `affinity-confirm-${width}-${theme}.png`),
+          fullPage: true,
+          animations: 'disabled',
+        })
+        await clearAll
+          .getByRole('button', { name: 'Clear All Cache', exact: true })
+          .click()
+        await otherRule
+          .locator('xpath=ancestor::td')
+          .getByText('0', { exact: true })
+          .waitFor()
+        await page
+          .locator('[role="alertdialog"]')
+          .waitFor({ state: 'detached' })
+        const afterAllStats = await context.request
+          .get(origin + '/api/option/channel_affinity_cache', { headers })
+          .then((response) => response.json())
+        assert.equal(afterAllStats.data.by_rule_name['WuCora session'], 0)
+        assert.equal(afterAllStats.data.by_rule_name['Other session'], 0)
+        assert.equal(mutations.length, 2)
+        page.off('request', recordMutation)
+        assert.equal(
+          await page.evaluate(
+            () => document.documentElement.scrollWidth <= innerWidth + 1
+          ),
+          true,
+          `Session rules overflow at ${width}/${theme}`
+        )
+        await page.screenshot({
+          path: path.join(output, `affinity-rules-${width}-${theme}.png`),
+          fullPage: true,
+        })
+        results.push({
+          route: routingRoute,
+          bindingCounts: {
+            before: [
+              stats.data.by_rule_name['WuCora session'],
+              stats.data.by_rule_name['Other session'],
+            ],
+            afterRuleClear: [
+              afterRuleStats.data.by_rule_name['WuCora session'],
+              afterRuleStats.data.by_rule_name['Other session'],
+            ],
+            afterClearAll: [
+              afterAllStats.data.by_rule_name['WuCora session'],
+              afterAllStats.data.by_rule_name['Other session'],
+            ],
+          },
+          theme,
+          width,
+          status: 'PASS',
+          scope:
+            'real saved rules and local relay bindings: refresh/cancel preserve both, per-rule clear preserves other binding, clear-all removes it; responsive screenshots',
+        })
+      }
+      if (!logoutOnly) {
+        stage = `pricing-${width}-${theme}`
         const pricingRoute = '/system-settings/billing/model-pricing'
         const headers = { Authorization: `Bearer ${login.data.access_token}` }
         const snapshot = await context.request
@@ -456,7 +697,19 @@ try {
   }
   assert.deepEqual(errors, [])
 } catch (error) {
-  results.push({ status: 'FAIL', message: error.stack })
+  results.push({
+    status: 'FAIL',
+    stage,
+    message: safeErrorMessage(error),
+    actual:
+      typeof error.actual === 'number' || typeof error.actual === 'boolean'
+        ? error.actual
+        : undefined,
+    expected:
+      typeof error.expected === 'number' || typeof error.expected === 'boolean'
+        ? error.expected
+        : undefined,
+  })
   process.exitCode = 1
 } finally {
   await browser?.close()
@@ -465,6 +718,11 @@ try {
     JSON.stringify(
       {
         root,
+        productSHA: process.env.PRODUCT_SHA,
+        productTree: process.env.PRODUCT_TREE,
+        workflowSHA: process.env.GITHUB_SHA,
+        origin,
+        mockOrigin,
         assets,
         browser: process.env.UI_BROWSER || 'playwright Chromium',
         check: logoutOnly ? 'logout' : 'full',

@@ -1,11 +1,61 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
 
 const origin = process.env.CONTAINER_ORIGIN
 assert.match(origin, /^http:\/\/172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+:3000$/)
 const output = path.join(process.env.RUNNER_TEMP, 'image-evidence')
+const container = JSON.parse(
+  fs.readFileSync(path.join(output, 'container-inspect.json'))
+)[0]
+const mock = JSON.parse(
+  fs.readFileSync(path.join(output, 'mock-container-inspect.json'))
+)[0]
+const network = JSON.parse(
+  fs.readFileSync(path.join(output, 'network-inspect.json'))
+)[0]
+const identity = JSON.parse(
+  fs.readFileSync(path.join(output, 'image-identity.json'))
+)
+assert.equal(identity.productSHA, process.env.PRODUCT_SHA)
+assert.equal(identity.productTree, process.env.PRODUCT_TREE)
+assert.equal(identity.workflowSHA, process.env.GITHUB_SHA)
+assert.equal(identity.registryDigest, null)
+assert.equal(identity.published, false)
+assert.equal(container.Image, identity.imageID)
+assert.deepEqual(container.Config.Entrypoint, ['/new-api'])
+assert.equal(container.HostConfig.Privileged, false)
+assert.equal(network.Internal, true)
+for (const item of [container, mock]) {
+  assert.equal(item.HostConfig.NetworkMode, 'wucora-image-review')
+  assert.ok(
+    Object.values(item.NetworkSettings.Ports || {}).every(
+      (value) => value === null
+    )
+  )
+  assert.equal(Object.keys(item.HostConfig.PortBindings || {}).length, 0)
+}
+assert.equal(container.Mounts.length, 1)
+assert.equal(container.Mounts[0].Destination, '/data')
+assert.equal(container.Mounts[0].Type, 'tmpfs')
+const mockAddress =
+  mock.NetworkSettings.Networks['wucora-image-review'].IPAddress
+const gatewayAddress =
+  container.NetworkSettings.Networks['wucora-image-review'].IPAddress
+const statsResponse = await fetch(`http://${mockAddress}:8080/stats`)
+assert.equal(statsResponse.status, 200)
+const stats = await statsResponse.json()
+assert.equal(stats.total, 12)
+assert.deepEqual(
+  stats.callers,
+  [gatewayAddress],
+  'Only the packaged gateway container called the mock'
+)
+fs.writeFileSync(
+  path.join(output, 'mock-stats.json'),
+  JSON.stringify(stats, null, 2)
+)
 const statusResponse = await fetch(origin + '/api/status')
 assert.equal(statusResponse.status, 200)
 const status = await statusResponse.json()
@@ -16,11 +66,14 @@ assert.equal(home.status, 200)
 const html = await home.text()
 assert.match(home.headers.get('content-type'), /text\/html/)
 assert.match(html, /<div id="root"/)
-const paths = [...html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css)(?:\?[^"']*)?)["']/g)].map(m => m[1])
-assert.ok(paths.some(p => p.includes('.js')))
-assert.ok(paths.some(p => p.includes('.css')))
+const paths = [
+  ...html.matchAll(/(?:src|href)=["']([^"']+\.(?:js|css)(?:\?[^"']*)?)["']/g),
+].map((m) => m[1])
+assert.ok(paths.some((p) => p.includes('.js')))
+assert.ok(paths.some((p) => p.includes('.css')))
 const assets = []
-let wucora = false, revision = false
+let wucora = false
+let revision = false
 for (const asset of paths) {
   const url = new URL(asset, origin)
   assert.equal(url.origin, origin)
@@ -31,12 +84,61 @@ for (const asset of paths) {
   const text = body.toString('utf8')
   wucora ||= /wcai|wucora/i.test(text)
   revision ||= text.includes(process.env.PRODUCT_SHA)
-  assets.push({ path: url.pathname, status: response.status, bytes: body.length, sha256: createHash('sha256').update(body).digest('hex') })
+  assets.push({
+    path: url.pathname,
+    status: response.status,
+    bytes: body.length,
+    sha256: createHash('sha256').update(body).digest('hex'),
+  })
 }
 assert.ok(wucora, 'Embedded frontend includes WuCora assets')
-// Source revision can be in a lazy JavaScript chunk; the status API independently verifies the backend injection.
-const browser = JSON.parse(fs.readFileSync(path.join(output, 'browser/result.json'), 'utf8'))
-assert.equal(browser.results.filter(r => r.status === 'PASS').length, 55)
-assert.equal(browser.results.filter(r => r.status === 'FAIL').length, 0)
-fs.writeFileSync(path.join(output, 'http-contract.json'), JSON.stringify({productSHA: process.env.PRODUCT_SHA, origin, status: 200, statusSourceRevision: status.data.source_revision, assets, embeddedWuCora: wucora, eagerAssetContainsRevision: revision, browserChecks: 55, frontendServedBy: 'packaged /new-api HTTP server; no static proxy'}, null, 2))
-console.log('Image HTTP contract and 55 sandboxed browser checks passed')
+const browser = JSON.parse(
+  fs.readFileSync(path.join(output, 'browser/result.json'))
+)
+assert.equal(browser.productSHA, process.env.PRODUCT_SHA)
+assert.equal(browser.workflowSHA, process.env.GITHUB_SHA)
+assert.equal(browser.sandbox, true)
+assert.equal(browser.results.filter((r) => r.status === 'PASS').length, 61)
+assert.equal(browser.results.filter((r) => r.status === 'FAIL').length, 0)
+assert.deepEqual(browser.errors, [])
+const bindingChecks = browser.results.filter(
+  (r) => r.route === '/system-settings/request-policies/routing'
+)
+assert.equal(bindingChecks.length, 6)
+for (const result of bindingChecks) {
+  assert.deepEqual(result.bindingCounts.before, [1, 1])
+  assert.deepEqual(result.bindingCounts.afterRuleClear, [0, 1])
+  assert.deepEqual(result.bindingCounts.afterClearAll, [0, 0])
+}
+const screenshots = fs
+  .readdirSync(path.join(output, 'browser'))
+  .filter((name) => name.endsWith('.png'))
+assert.equal(screenshots.length, 66)
+fs.writeFileSync(
+  path.join(output, 'http-contract.json'),
+  JSON.stringify(
+    {
+      productSHA: process.env.PRODUCT_SHA,
+      productTree: process.env.PRODUCT_TREE,
+      workflowSHA: process.env.GITHUB_SHA,
+      origin,
+      status: 200,
+      statusSourceRevision: status.data.source_revision,
+      assets,
+      embeddedWuCora: wucora,
+      eagerAssetContainsRevision: revision,
+      browserChecks: 61,
+      screenshots: 66,
+      sandbox: true,
+      mockCalls: stats,
+      internalNetwork: true,
+      publishedHostPorts: false,
+      frontendServedBy: 'packaged /new-api HTTP server; no static proxy',
+    },
+    null,
+    2
+  )
+)
+console.log(
+  'Packaged image HTTP, isolated mock and 61 sandboxed browser checks passed'
+)
