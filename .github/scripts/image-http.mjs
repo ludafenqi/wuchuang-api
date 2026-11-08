@@ -36,9 +36,19 @@ for (const item of [container, mock]) {
   )
   assert.equal(Object.keys(item.HostConfig.PortBindings || {}).length, 0)
 }
-assert.equal(container.Mounts.length, 1)
-assert.equal(container.Mounts[0].Destination, '/data')
-assert.equal(container.Mounts[0].Type, 'tmpfs')
+assert.deepEqual(Object.keys(container.HostConfig.Tmpfs || {}), ['/data'])
+assert.ok(
+  container.Mounts.every(
+    (mount) => mount.Type === 'tmpfs' && mount.Destination === '/data'
+  )
+)
+assert.equal((container.HostConfig.Binds || []).length, 0)
+const dataMount = fs
+  .readFileSync(path.join(output, 'runtime-data-mount.txt'), 'utf8')
+  .trim()
+  .split(/\s+/)
+assert.equal(dataMount[1], '/data')
+assert.equal(dataMount[2], 'tmpfs')
 const mockAddress =
   mock.NetworkSettings.Networks['wucora-image-review'].IPAddress
 const gatewayAddress =

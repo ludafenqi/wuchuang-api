@@ -75,6 +75,7 @@ PY
   docker exec wucora-image-review readlink /proc/1/exe > "$evidence/runtime-executable.txt"
   test "$(cat "$evidence/runtime-executable.txt")" = /new-api
   docker exec wucora-image-review sha256sum /new-api > "$evidence/runtime-binary-sha256.txt"
+  docker exec wucora-image-review sh -c 'grep " /data " /proc/mounts' > "$evidence/runtime-data-mount.txt"
   record_runtime_inspect
   mock_address="$(docker inspect -f '{{(index .NetworkSettings.Networks "wucora-image-review").IPAddress}}' wucora-image-mock)"
   for attempt in $(seq 1 120); do
