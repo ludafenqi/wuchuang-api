@@ -1,24 +1,26 @@
-name: WuCora merged main image verification (no publication)
+name: WuCora published digest verification (no deployment)
 on:
   push:
-    branches: [codex/wucora-image-main-fe24147d-20261108]
+    branches: [codex/wucora-ghcr-fe24147d-20261109]
   workflow_dispatch:
 permissions:
   contents: read
+  packages: read
 concurrency:
-  group: wucora-image-preparation-main-fe24147d
+  group: wucora-ghcr-pull-fe24147d
   cancel-in-progress: false
 jobs:
   image:
-    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-image-main-fe24147d-20261108'
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-ghcr-fe24147d-20261109'
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
     env:
       DOCKER_BUILD_RECORD_UPLOAD: 'false'
       DOCKER_BUILD_SUMMARY: 'false'
       PRODUCT_SHA: fe24147d2e105f570f0a80e669d708d54a3e7efd
       PRODUCT_TREE: 3ecdf82840d95f17bf1920b7ea8e51ae91ca58e1
-      IMAGE: wucora-review:sha-fe24147d2e105f570f0a80e669d708d54a3e7efd
+      REGISTRY_DIGEST: sha256:0c184c42a4c84a97659143d5fa1997290db1e6d0c9b274de335ead009e467ced
+      IMAGE: ghcr.io/ludafenqi/wuchuang-api@sha256:0c184c42a4c84a97659143d5fa1997290db1e6d0c9b274de335ead009e467ced
     steps:
       - name: Checkout verification workflow source
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
@@ -32,7 +34,7 @@ jobs:
           ref: fe24147d2e105f570f0a80e669d708d54a3e7efd
           path: product
           persist-credentials: false
-      - name: Record clean product context and exact Git trees
+      - name: Record clean product reference and exact Git trees
         shell: bash
         run: |
           set -euo pipefail
@@ -49,28 +51,24 @@ jobs:
           git -C automation rev-parse HEAD^{tree} > "$RUNNER_TEMP/image-evidence/workflow-tree.txt"
           git -C product rev-parse HEAD^{tree} > "$RUNNER_TEMP/image-evidence/product-tree.txt"
           git -C product ls-files -s > "$RUNNER_TEMP/image-evidence/product-index.txt"
-          git -C product status --porcelain --untracked-files=all --ignored > "$RUNNER_TEMP/image-evidence/build-context-status.txt"
+          git -C product status --porcelain --untracked-files=all --ignored > "$RUNNER_TEMP/image-evidence/product-reference-status.txt"
           cp product/Dockerfile "$RUNNER_TEMP/image-evidence/"
           cp product/.dockerignore "$RUNNER_TEMP/image-evidence/dockerignore.txt"
           docker version > "$RUNNER_TEMP/image-evidence/docker-version.txt"
-      - name: Set up Docker buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c
-      - name: Build exact merged main locally without pushing
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a
+      - name: Login for read-only GHCR pull
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4
         with:
-          context: ./product
-          file: ./product/Dockerfile
-          platforms: linux/amd64
-          load: true
-          push: false
-          provenance: false
-          tags: wucora-review:sha-fe24147d2e105f570f0a80e669d708d54a3e7efd
-          build-args: |
-            SOURCE_REVISION=fe24147d2e105f570f0a80e669d708d54a3e7efd
-          labels: |
-            org.opencontainers.image.source=https://github.com/ludafenqi/wuchuang-api
-            org.opencontainers.image.revision=fe24147d2e105f570f0a80e669d708d54a3e7efd
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify immutable registry content and pull without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 automation/.github/scripts/registry-fetch.py
+          docker pull --platform linux/amd64 "$IMAGE" > "$RUNNER_TEMP/image-evidence/registry-pull.log"
       - name: Inspect packaged image, verify Git-blob licenses and start isolated containers
         shell: bash
         run: bash automation/.github/scripts/image-preparation.sh start
@@ -104,7 +102,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          name: image-preparation-fe24147d2e105f570f0a80e669d708d54a3e7efd-${{ github.run_id }}
+          name: ghcr-pull-fe24147d2e105f570f0a80e669d708d54a3e7efd-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/image-evidence/*.json
             ${{ runner.temp }}/image-evidence/*.txt

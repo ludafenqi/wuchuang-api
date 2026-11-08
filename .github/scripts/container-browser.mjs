@@ -718,6 +718,8 @@ try {
     JSON.stringify(
       {
         root,
+        registryDigest: process.env.REGISTRY_DIGEST,
+        imageReference: process.env.IMAGE,
         productSHA: process.env.PRODUCT_SHA,
         productTree: process.env.PRODUCT_TREE,
         workflowSHA: process.env.GITHUB_SHA,

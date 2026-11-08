@@ -29,8 +29,13 @@ assert i['Config']['Entrypoint']==['/new-api']
 assert i['Config']['WorkingDir']=='/data'
 assert i['Config']['Labels']['org.opencontainers.image.revision']==os.environ['PRODUCT_SHA']
 assert i['Config']['Labels']['org.opencontainers.image.source']=='https://github.com/ludafenqi/wuchuang-api'
-assert not i.get('RepoDigests')
-json.dump(dict(productSHA=os.environ['PRODUCT_SHA'],productTree=os.environ['PRODUCT_TREE'],workflowSHA=os.environ['GITHUB_SHA'],platform='linux/amd64',imageID=i['Id'],registryDigest=None,published=False),open(p+'image-identity.json','w'),indent=2)
+registry=json.load(open(p+'registry-resolution.json'))
+assert registry['registryDigest']==os.environ['REGISTRY_DIGEST']
+assert registry['imageReference']==os.environ['IMAGE']
+assert registry['productSHA']==os.environ['PRODUCT_SHA']
+assert registry['configDigest']==i['Id']
+assert registry['imageReference'] in i.get('RepoDigests',[])
+json.dump(dict(productSHA=os.environ['PRODUCT_SHA'],productTree=os.environ['PRODUCT_TREE'],workflowSHA=os.environ['GITHUB_SHA'],platform='linux/amd64',imageID=i['Id'],imageReference=os.environ['IMAGE'],registryDigest=registry['registryDigest'],platformManifestDigest=registry['platformManifestDigest'],configDigest=registry['configDigest'],published=True,rebuilt=False),open(p+'image-identity.json','w'),indent=2)
 PY
   docker create --name wucora-inspect "$IMAGE" > /dev/null
   mkdir -p "$evidence/licenses" "$RUNNER_TEMP/license-blobs"
@@ -63,7 +68,7 @@ PY
   docker run -d --name wucora-image-review --network "$network" \
     --tmpfs /data:rw,size=256m \
     -e SQLITE_PATH=/data/isolated.db -e SQL_DSN= -e LOG_SQL_DSN= -e REDIS_CONN_STRING= \
-    -e SESSION_SECRET=disposable-container-review-only-519747cd4 \
+    -e SESSION_SECRET=disposable-registry-review-only-fe24147d \
     -e GIN_MODE=release -e UPDATE_TASK=false -e GLOBAL_API_RATE_LIMIT_ENABLE=false \
     -e CRITICAL_RATE_LIMIT=2000 -e HTTP_PROXY=http://127.0.0.1:1 \
     -e HTTPS_PROXY=http://127.0.0.1:1 -e NO_PROXY=127.0.0.1,localhost,wucora-image-mock \

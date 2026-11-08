@@ -21,8 +21,12 @@ const identity = JSON.parse(
 assert.equal(identity.productSHA, process.env.PRODUCT_SHA)
 assert.equal(identity.productTree, process.env.PRODUCT_TREE)
 assert.equal(identity.workflowSHA, process.env.GITHUB_SHA)
-assert.equal(identity.registryDigest, null)
-assert.equal(identity.published, false)
+assert.equal(identity.registryDigest, process.env.REGISTRY_DIGEST)
+assert.equal(identity.published, true)
+assert.equal(identity.rebuilt, false)
+assert.equal(identity.imageReference, process.env.IMAGE)
+assert.ok(container.Image === identity.configDigest)
+assert.ok(identity.platformManifestDigest.startsWith('sha256:'))
 assert.equal(container.Image, identity.imageID)
 assert.deepEqual(container.Config.Entrypoint, ['/new-api'])
 assert.equal(container.HostConfig.Privileged, false)
@@ -102,11 +106,14 @@ for (const asset of paths) {
   })
 }
 assert.ok(wucora, 'Embedded frontend includes WuCora assets')
+assert.ok(revision, 'Embedded frontend includes the exact product revision')
 const browser = JSON.parse(
   fs.readFileSync(path.join(output, 'browser/result.json'))
 )
 assert.equal(browser.productSHA, process.env.PRODUCT_SHA)
 assert.equal(browser.workflowSHA, process.env.GITHUB_SHA)
+assert.equal(browser.registryDigest, process.env.REGISTRY_DIGEST)
+assert.equal(browser.imageReference, process.env.IMAGE)
 assert.equal(browser.sandbox, true)
 assert.equal(browser.results.filter((r) => r.status === 'PASS').length, 61)
 assert.equal(browser.results.filter((r) => r.status === 'FAIL').length, 0)
@@ -128,6 +135,10 @@ fs.writeFileSync(
   path.join(output, 'http-contract.json'),
   JSON.stringify(
     {
+      registryDigest: process.env.REGISTRY_DIGEST,
+      imageReference: process.env.IMAGE,
+      published: true,
+      rebuilt: false,
       productSHA: process.env.PRODUCT_SHA,
       productTree: process.env.PRODUCT_TREE,
       workflowSHA: process.env.GITHUB_SHA,
