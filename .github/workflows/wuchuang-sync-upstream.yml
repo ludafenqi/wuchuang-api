@@ -88,6 +88,7 @@ jobs:
           # starts at main. This permits testing a driver repair before merging it.
           git fetch --no-tags origin "$GITHUB_SHA"
           git show "$GITHUB_SHA:.github/scripts/prepare-upstream-candidate.mjs" > "$RUNNER_TEMP/prepare-upstream-candidate.mjs"
+          git show "$GITHUB_SHA:.github/scripts/merge-upstream-locales.mjs" > "$RUNNER_TEMP/merge-upstream-locales.mjs"
           node "$RUNNER_TEMP/prepare-upstream-candidate.mjs"
 
       - name: Verify candidate preparation and normalized translations

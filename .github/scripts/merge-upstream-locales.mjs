@@ -60,6 +60,33 @@ export function mergeTranslations(base, ours, theirs) {
   return Object.fromEntries(entries)
 }
 
+// Cover clean merges too: Git's text merge can undo canonical JSON escaping.
+// Check every top-level locale consumed by i18n:sync, including new languages.
+export function normalizeLocales(root, bun = process.env.BUN_BINARY || 'bun') {
+  const directory = path.join(root, 'web/src/i18n/locales')
+  const files = fs.readdirSync(directory).filter(file => file.endsWith('.json')).sort()
+  assert.ok(files.length, 'No locales to normalize')
+  const originals = new Map(files.map(file => [file, fs.readFileSync(path.join(directory, file))]))
+  const expected = new Map(files.map(file => [file, parseLocale(originals.get(file).toString('utf8'))]))
+  try {
+    execFileSync(bun, ['run', 'i18n:sync'], { cwd: path.join(root, 'web'), stdio: 'inherit' })
+    assert.deepEqual(fs.readdirSync(directory).filter(file => file.endsWith('.json')).sort(), files, 'i18n normalization changed locale files')
+    for (const file of files) {
+      assert.deepEqual(parseLocale(fs.readFileSync(path.join(directory, file), 'utf8')), expected.get(file), 'i18n normalization changed meaning: ' + file)
+    }
+  } catch (error) {
+    // merge --abort alone preserves unstaged edits in unmerged files. Restore
+    // precisely the files this normalizer owns before the caller aborts.
+    for (const [file, contents] of originals) fs.writeFileSync(path.join(directory, file), contents)
+    for (const file of fs.readdirSync(directory).filter(file => file.endsWith('.json'))) {
+      if (!originals.has(file)) fs.unlinkSync(path.join(directory, file))
+    }
+    throw error
+  }
+  // Stage only after ALL languages have passed strict parsing and equality.
+  execFileSync('git', ['add', '--', ...files.map(file => `web/src/i18n/locales/${file}`)], { cwd: root })
+}
+
 // This function becomes the temporary sanctioned add-missing-keys.mjs entrypoint.
 // Its newKeys are complete proved results, not guessed translations. Starting
 // empty also preserves proved deletions while conflict markers are on disk.
