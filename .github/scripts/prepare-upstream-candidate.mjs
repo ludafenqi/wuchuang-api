@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+
 import { normalizeLocales } from './merge-upstream-locales.mjs'
 
 // Fetching is confined to the entry point. This function also runs against real
@@ -85,7 +86,11 @@ export function prepareCandidate({
   if (resolved) {
     // Only an explicit workflow_dispatch input can select this path. Scheduled
     // runs never reuse a previous automation branch as a silent conflict fix.
-    if (fs.existsSync(path.resolve(root, git(['rev-parse', '--git-path', 'MERGE_HEAD']))))
+    if (
+      fs.existsSync(
+        path.resolve(root, git(['rev-parse', '--git-path', 'MERGE_HEAD']))
+      )
+    )
       git(['merge', '--abort'])
     git(['checkout', '-B', 'automation/upstream-sync', resolved])
   } else {
@@ -94,7 +99,9 @@ export function prepareCandidate({
       git(['commit', '--no-edit'])
     } catch (normalizationError) {
       git(['merge', '--abort'])
-      throw new Error('Candidate normalization failed; merge aborted', { cause: normalizationError })
+      throw new Error('Candidate normalization failed; merge aborted', {
+        cause: normalizationError,
+      })
     }
     const file = path.join(root, '.github/wucora-ui.json')
     fs.writeFileSync(
@@ -159,7 +166,10 @@ if (
       execFileSync(
         process.execPath,
         ['.github/scripts/merge-upstream-locales.mjs'],
-        { cwd: root, stdio: 'inherit' }
+        {
+          cwd: root,
+          stdio: 'inherit',
+        }
       ),
   })
   fs.appendFileSync(

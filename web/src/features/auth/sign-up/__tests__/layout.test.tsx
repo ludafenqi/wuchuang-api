@@ -23,11 +23,13 @@ import {
   createRouter,
   RouterProvider,
 } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
 import { I18nextProvider } from 'react-i18next'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
@@ -61,7 +63,7 @@ async function renderAuthPage(component: () => React.ReactNode) {
   await language.init({
     lng: 'zh',
     fallbackLng: 'zh',
-    resources: { zh },
+    resources: { zh, en },
     nsSeparator: false,
   })
   const router = createRouter({
@@ -69,16 +71,57 @@ async function renderAuthPage(component: () => React.ReactNode) {
     history: createMemoryHistory({ initialEntries: ['/'] }),
   })
   await router.load()
-  return render(
+  const view = render(
     <I18nextProvider i18n={language}>
       <QueryClientProvider client={client}>
         <RouterProvider router={router} />
       </QueryClientProvider>
     </I18nextProvider>
   )
+  return { language, ...view }
 }
 
 describe('registration brand headline', () => {
+  it('translates legal consent on language change while preserving consent and the WuCora headline', async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          register_enabled: true,
+          user_agreement_enabled: true,
+          privacy_policy_enabled: true,
+        },
+      },
+    })
+    const { language } = await renderAuthPage(SignUp)
+    const consent = await screen.findByRole('checkbox')
+    expect(consent).toHaveAccessibleName(
+      `${zh.translation['I have read and agree to the']} ${zh.translation['User Agreement']} ${zh.translation.and} ${zh.translation['Privacy Policy']}.`
+    )
+    await userEvent.setup().click(consent)
+    expect(consent).toBeChecked()
+    expect(
+      screen.getByText(
+        zh.translation['By creating an account, you agree to our'],
+        {
+          exact: false,
+        }
+      )
+    ).toBeVisible()
+    await act(() => language.changeLanguage('en'))
+    expect(consent).toBeChecked()
+    expect(consent).toHaveAccessibleName(
+      'I have read and agree to the User Agreement and Privacy Policy.'
+    )
+    expect(
+      screen.getByRole('heading', { name: 'Models at your fingertips' })
+    ).toBeVisible()
+    expect(
+      screen.getByText('By creating an account, you agree to our', {
+        exact: false,
+      })
+    ).toBeVisible()
+  })
   it('renders the requested complete headline without explicit breaks and keeps the existing subtitle and form', async () => {
     await renderAuthPage(SignUp)
     const title = await screen.findByRole('heading', {

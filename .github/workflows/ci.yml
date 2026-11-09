@@ -165,6 +165,14 @@ jobs:
             TEST_CHANNEL_SQL_DSN="$dsn" go test ./controller -run '^TestAddChannel(ReturnsCreatedIDs|InvalidVertexBatchDoesNotReturnResults|RollbackDoesNotReturnIDs|PanicRollsBackWithoutSuccess)$|^TestMultiKeyEnableRestoresOnlyExhaustedChannels$' -count=1 -v
           done
 
+      - name: Verify OAuth inviter persistence on three real databases
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
+            TEST_TASK_SQL_DSN="$dsn" go test ./controller -run '^TestOAuthRegistrationPersistsInviter$' -count=1 -v
+          done
+
       - name: Verify delivered SSE settlement despite failures on three real databases
         shell: bash
         run: |
