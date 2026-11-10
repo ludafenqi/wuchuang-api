@@ -47,7 +47,14 @@ beforeEach(() => {
   useSystemConfigStore.getState().setLoading(false)
   vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
   vi.spyOn(api, 'get').mockResolvedValue({
-    data: { success: true, data: { register_enabled: true } },
+    data: {
+      success: true,
+      data: {
+        register_enabled: true,
+        user_agreement_enabled: true,
+        privacy_policy_enabled: true,
+      },
+    },
   })
 })
 
@@ -123,6 +130,12 @@ describe('login brand headline', () => {
 
   it('updates the shared brand headline when the interface language changes', async () => {
     const { language } = await renderSignIn()
+    expect(
+      await screen.findByText(
+        zh.translation['By clicking sign in, you agree to our'],
+        { exact: false }
+      )
+    ).toBeVisible()
     await act(() => language.changeLanguage('en'))
     const title = await screen.findByRole('heading', {
       name: en.translation['Models at your fingertips'],
@@ -134,5 +147,23 @@ describe('login brand headline', () => {
         name: en.translation['One gateway. Every model.'],
       })
     ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(
+        en.translation['By clicking sign in, you agree to our'],
+        {
+          exact: false,
+        }
+      )
+    ).toBeVisible()
+    for (const link of screen.getAllByRole('link', {
+      name: 'User Agreement',
+    })) {
+      expect(link).toHaveAttribute('href', '/user-agreement')
+    }
+    for (const link of screen.getAllByRole('link', {
+      name: 'Privacy Policy',
+    })) {
+      expect(link).toHaveAttribute('href', '/privacy-policy')
+    }
   })
 })

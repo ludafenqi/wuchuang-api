@@ -8,7 +8,10 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 
+import { parseLocale } from './merge-upstream-locales.mjs'
 import { prepareCandidate } from './prepare-upstream-candidate.mjs'
+
+const languages = ['en', 'zh', 'zh-TW', 'fr', 'ja', 'ru', 'vi']
 
 function repository(t, conflict = true) {
   const parent = fs.realpathSync(os.tmpdir())
@@ -41,6 +44,35 @@ function repository(t, conflict = true) {
   git(['config', 'user.name', 'Fixture'])
   git(['config', 'user.email', 'fixture@example.invalid'])
   fs.mkdirSync(path.join(root, '.github'))
+  write(
+    '.gitignore',
+    'web/src/i18n/locales/_reports/\nweb/src/i18n/locales/_extras/\n'
+  )
+  fs.mkdirSync(path.join(root, 'web/src/i18n/locales'), { recursive: true })
+  fs.mkdirSync(path.join(root, 'web/scripts'), { recursive: true })
+  write(
+    'web/package.json',
+    '{"scripts":{"i18n:sync":"node scripts/sync-i18n.mjs"}}'
+  )
+  fs.copyFileSync(
+    new URL('../../web/scripts/sync-i18n.mjs', import.meta.url),
+    path.join(root, 'web/scripts/sync-i18n.mjs')
+  )
+  for (const lang of languages) {
+    write(
+      `web/src/i18n/locales/${lang}.json`,
+      JSON.stringify(
+        {
+          translation: {
+            'footer.newapi.projectAttributionSuffix': 'Preserved attribution',
+            WuCora: 'Preserved brand',
+          },
+        },
+        null,
+        2
+      ) + '\n'
+    )
+  }
   const pin = {
     uiReference: 'a'.repeat(40),
     integratedUpstream: 'b'.repeat(40),
@@ -89,6 +121,40 @@ test('a clean merge includes both histories and records its exact upstream', (t)
   assert.equal(f.git(['rev-parse', 'main']), f.base)
 })
 
+test('a clean merge commits equivalent normalization for every language and is idempotent', (t) => {
+  const f = repository(t, false)
+  const expected = Object.fromEntries(
+    languages.map((lang) => [
+      lang,
+      parseLocale(
+        fs.readFileSync(
+          path.join(f.root, `web/src/i18n/locales/${lang}.json`),
+          'utf8'
+        )
+      ),
+    ])
+  )
+  const result = prepareCandidate({
+    ...f,
+    resolved: '',
+    resolveLocales: () => assert.fail('No conflict expected'),
+  })
+  for (const lang of languages) {
+    const committed = f.git(['show', `HEAD:web/src/i18n/locales/${lang}.json`])
+    assert.ok(
+      committed.includes('footer.new\\u0061pi.projectAttributionSuffix')
+    )
+    assert.deepEqual(parseLocale(committed), expected[lang])
+  }
+  execFileSync(process.env.BUN_BINARY || 'bun', ['run', 'i18n:sync'], {
+    cwd: path.join(f.root, 'web'),
+  })
+  assert.equal(f.git(['diff', '--name-only']), '')
+  assert.equal(result.candidate, f.git(['rev-parse', 'HEAD']))
+  f.git(['merge-base', '--is-ancestor', f.base, result.candidate])
+  f.git(['merge-base', '--is-ancestor', f.upstream, result.candidate])
+})
+
 test('unresolved non-locale conflicts abort without changing main or the index', (t) => {
   const f = repository(t)
   assert.throws(
@@ -107,10 +173,85 @@ test('unresolved non-locale conflicts abort without changing main or the index',
   assert.equal(f.git(['rev-parse', 'main']), f.base)
 })
 
+test('invalid or interrupted normalization aborts the clean merge without a candidate', (t) => {
+  const scenarios = [
+    {
+      name: 'changed value',
+      mutation: "json.translation.WuCora = 'unexpected'",
+    },
+    { name: 'added key', mutation: "json.translation.added = 'unexpected'" },
+    { name: 'removed key', mutation: 'delete json.translation.WuCora' },
+    {
+      name: 'duplicate output',
+      output: '{"translation":{"WuCora":"first","\\u0057uCora":"second"}}',
+    },
+    {
+      name: 'partial write then process failure',
+      mutation: "json.translation.WuCora = 'partial'",
+      abort: true,
+    },
+    {
+      name: 'duplicate input',
+      input: '{"translation":{"WuCora":"first","\\u0057uCora":"second"}}',
+    },
+    {
+      name: 'new language semantic change',
+      language: 'de',
+      mutation: "json.translation.WuCora = 'unexpected'",
+    },
+  ]
+  for (const scenario of scenarios) {
+    const f = repository(t, false)
+    const locale = `web/src/i18n/locales/${scenario.language || 'vi'}.json`
+    if (scenario.language)
+      f.write(locale, f.git(['show', 'HEAD:web/src/i18n/locales/en.json']))
+    if (scenario.input) f.write(locale, scenario.input)
+    if (!scenario.input) {
+      f.write(
+        'web/scripts/sync-i18n.mjs',
+        `import fs from 'node:fs';
+const file = ${JSON.stringify('../' + locale)};
+const json = JSON.parse(fs.readFileSync(file, 'utf8'));
+${scenario.mutation || ''};
+fs.writeFileSync(file, ${scenario.output ? JSON.stringify(scenario.output) : 'JSON.stringify(json)'});
+${scenario.abort ? 'process.exit(1)' : ''}
+`
+      )
+    }
+    const base = f.commit(scenario.name)
+    f.git(['update-ref', 'refs/remotes/origin/main', base])
+    assert.throws(
+      () =>
+        prepareCandidate({
+          ...f,
+          resolved: '',
+          resolveLocales: () => assert.fail('No conflict expected'),
+        }),
+      (error) => {
+        assert.match(error.message, /normalization failed; merge aborted/)
+        assert.match(
+          error.cause.message,
+          /changed meaning|Duplicate locale key|Command failed/
+        )
+        return true
+      },
+      scenario.name
+    )
+    assert.equal(f.git(['rev-parse', 'HEAD']), base, scenario.name)
+    assert.equal(f.git(['status', '--porcelain']), '', scenario.name)
+    assert.equal(f.git(['rev-parse', 'main']), base, scenario.name)
+    assert.equal(fs.existsSync(path.join(f.root, '.git/MERGE_HEAD')), false)
+  }
+})
+
 test('an explicit reviewed candidate keeps its fixes even when upstream merges cleanly', (t) => {
   const f = repository(t, false)
   f.git(['checkout', 'prepared'])
   f.write('regression-fix.txt', 'reviewed credential rotation fix\n')
+  f.write(
+    'web/scripts/sync-i18n.mjs',
+    "throw new Error('Reviewed candidates must not be rewritten')\n"
+  )
   const resolved = f.commit('review fix after the clean merge')
   f.git(['checkout', 'main'])
   const result = prepareCandidate({
@@ -120,6 +261,7 @@ test('an explicit reviewed candidate keeps its fixes even when upstream merges c
   })
   assert.deepEqual(result.conflicts, [])
   assert.equal(result.candidate, resolved)
+  assert.equal(f.git(['status', '--porcelain']), '')
   assert.equal(
     f.git(['show', 'HEAD:regression-fix.txt']),
     'reviewed credential rotation fix'
@@ -141,6 +283,21 @@ test('an explicitly pinned resolution follows an actual failed merge and keeps b
     f.git(['show', 'HEAD:behavior.txt']),
     'fork behavior\nupstream behavior'
   )
+  assert.equal(f.git(['status', '--porcelain']), '')
+  assert.equal(f.git(['rev-parse', 'main']), f.base)
+})
+
+test('an explicit reviewed SHA is retained even when main already contains the upstream batch', (t) => {
+  const f = repository(t, false)
+  f.git(['update-ref', 'refs/remotes/origin/main', f.resolved])
+  f.git(['checkout', 'prepared'])
+  f.write('review-fix.txt', 'reviewed follow-up\n')
+  const resolved = f.commit('review fix after upstream was integrated')
+  f.git(['checkout', 'main'])
+  const result = prepareCandidate({ ...f, resolved })
+  assert.equal(result.candidate, resolved)
+  assert.equal(f.git(['rev-parse', 'HEAD']), resolved)
+  assert.equal(result.changed, true)
   assert.equal(f.git(['status', '--porcelain']), '')
   assert.equal(f.git(['rev-parse', 'main']), f.base)
 })

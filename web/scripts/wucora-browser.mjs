@@ -71,6 +71,8 @@ const app = spawn(gateway, [], {
   env: {
     ...process.env,
     PORT: String(backendPort),
+    HOST: '127.0.0.1',
+    ENABLE_PPROF: 'false',
     SQLITE_PATH: path.join(runtime, 'isolated.db'),
     SQL_DSN: '',
     LOG_SQL_DSN: '',
@@ -171,6 +173,18 @@ try {
     username: 'uiregression',
     password: 'Disposable-UI-Only-2026!',
   }
+  await assert.rejects(
+    fetch(`http://127.0.0.2:${backendPort}/api/setup`, {
+      signal: AbortSignal.timeout(3000),
+    }),
+    (error) =>
+      error.code === 'ECONNREFUSED' || error.cause?.code === 'ECONNREFUSED',
+    'HOST must restrict the real gateway listener to 127.0.0.1'
+  )
+  results.push({
+    status: 'PASS',
+    scope: 'HOST=127.0.0.1 serves its configured address and refuses 127.0.0.2',
+  })
   const setup = await fetch(`${backend}/api/setup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

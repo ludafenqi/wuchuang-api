@@ -7,6 +7,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { normalizeLocales } from './merge-upstream-locales.mjs'
+
 // Fetching is confined to the entry point. This function also runs against real
 // local repositories in tests, including the failed merge and abort paths.
 export function prepareCandidate({
@@ -56,13 +58,25 @@ export function prepareCandidate({
       'Resolution changes protected UI reference or review policy'
     )
   }
-  if (git(['merge-base', base, upstream]) === upstream)
+  if (git(['merge-base', base, upstream]) === upstream) {
+    if (resolved) {
+      git(['checkout', '-B', 'automation/upstream-sync', resolved])
+      return {
+        changed: resolved !== base,
+        base,
+        upstream,
+        candidate: resolved,
+        conflicts: [],
+        explicitResolution: resolved,
+      }
+    }
     return { changed: false, base, upstream, candidate: base, conflicts: [] }
+  }
 
   git(['checkout', '-B', 'automation/upstream-sync', base])
   let conflicts = []
   try {
-    git(['merge', '--no-ff', '--no-edit', upstream])
+    git(['merge', '--no-ff', '--no-commit', upstream])
   } catch (mergeError) {
     conflicts = git(['diff', '--name-only', '--diff-filter=U'])
       .split('\n')
@@ -72,7 +86,6 @@ export function prepareCandidate({
     try {
       resolveLocales()
       assert.equal(git(['diff', '--name-only', '--diff-filter=U']), '')
-      git(['commit', '--no-edit'])
     } catch (resolutionError) {
       git(['merge', '--abort'])
       if (!resolved)
@@ -85,8 +98,23 @@ export function prepareCandidate({
   if (resolved) {
     // Only an explicit workflow_dispatch input can select this path. Scheduled
     // runs never reuse a previous automation branch as a silent conflict fix.
+    if (
+      fs.existsSync(
+        path.resolve(root, git(['rev-parse', '--git-path', 'MERGE_HEAD']))
+      )
+    )
+      git(['merge', '--abort'])
     git(['checkout', '-B', 'automation/upstream-sync', resolved])
   } else {
+    try {
+      normalizeLocales(root)
+      git(['commit', '--no-edit'])
+    } catch (normalizationError) {
+      git(['merge', '--abort'])
+      throw new Error('Candidate normalization failed; merge aborted', {
+        cause: normalizationError,
+      })
+    }
     const file = path.join(root, '.github/wucora-ui.json')
     fs.writeFileSync(
       file,
@@ -150,7 +178,10 @@ if (
       execFileSync(
         process.execPath,
         ['.github/scripts/merge-upstream-locales.mjs'],
-        { cwd: root, stdio: 'inherit' }
+        {
+          cwd: root,
+          stdio: 'inherit',
+        }
       ),
   })
   fs.appendFileSync(
