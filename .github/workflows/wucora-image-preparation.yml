@@ -1,0 +1,116 @@
+name: WuCora published digest verification (no deployment)
+on:
+  push:
+    branches: [codex/wucora-ghcr-verify-10630f3f-20261110]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: wucora-ghcr-pull-10630f3f
+  cancel-in-progress: false
+jobs:
+  image:
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-ghcr-verify-10630f3f-20261110'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: 'false'
+      DOCKER_BUILD_SUMMARY: 'false'
+      PRODUCT_SHA: 10630f3f183eecb6e73ddead4388cbaba2c5f60e
+      PRODUCT_TREE: 5b6a4d861ba6d64741c84b64f5916eb3ba7fb4e4
+      REGISTRY_DIGEST: sha256:4a0bad6682dd0f0c6939ad8bef0e7695b4e0b42f41b970711007199bcc0db831
+      IMAGE: ghcr.io/ludafenqi/wuchuang-api@sha256:4a0bad6682dd0f0c6939ad8bef0e7695b4e0b42f41b970711007199bcc0db831
+    steps:
+      - name: Checkout verification workflow source
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - name: Checkout exact product commit
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 10630f3f183eecb6e73ddead4388cbaba2c5f60e
+          path: product
+          persist-credentials: false
+      - name: Record clean product reference and exact Git trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/image-evidence"
+          test "$(git -C automation rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git -C product rev-parse HEAD)" = "$PRODUCT_SHA"
+          test "$(git -C product rev-parse HEAD^{tree})" = "$PRODUCT_TREE"
+          test -z "$(git -C product status --porcelain --untracked-files=all --ignored)"
+          test ! -e product/web/node_modules
+          test ! -e product/web/dist
+          test ! -e product/.local-tests
+          printf '%s\n' "$GITHUB_SHA" > "$RUNNER_TEMP/image-evidence/workflow-sha.txt"
+          printf '%s\n' "$PRODUCT_SHA" > "$RUNNER_TEMP/image-evidence/product-sha.txt"
+          git -C automation rev-parse HEAD^{tree} > "$RUNNER_TEMP/image-evidence/workflow-tree.txt"
+          git -C product rev-parse HEAD^{tree} > "$RUNNER_TEMP/image-evidence/product-tree.txt"
+          git -C product ls-files -s > "$RUNNER_TEMP/image-evidence/product-index.txt"
+          git -C product status --porcelain --untracked-files=all --ignored > "$RUNNER_TEMP/image-evidence/product-reference-status.txt"
+          cp product/Dockerfile "$RUNNER_TEMP/image-evidence/"
+          cp product/.dockerignore "$RUNNER_TEMP/image-evidence/dockerignore.txt"
+          docker version > "$RUNNER_TEMP/image-evidence/docker-version.txt"
+      - name: Login for read-only GHCR pull
+        uses: docker/login-action@c99871dec2022cc055c062a10cc1a1310835ceb4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify immutable registry content and pull without rebuilding
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          python3 automation/.github/scripts/registry-fetch.py
+          docker pull --platform linux/amd64 "$IMAGE" > "$RUNNER_TEMP/image-evidence/registry-pull.log"
+      - name: Inspect packaged image, verify Git-blob licenses and start isolated containers
+        shell: bash
+        run: bash automation/.github/scripts/image-preparation.sh start
+      - name: Set up Bun for the external browser harness
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: '1.4.4'
+      - name: Verify packaged service, actual relay bindings and embedded pages
+        shell: bash
+        env:
+          UI_BROWSER: /opt/google/chrome/chrome
+        run: |
+          set -euo pipefail
+          test -z "$(git -C product status --porcelain --untracked-files=all --ignored)"
+          cd product/web
+          bun install --frozen-lockfile
+          bun x playwright install-deps chromium
+          mkdir -p "$RUNNER_TEMP/image-harness"
+          cp ../../automation/.github/scripts/container-browser.mjs "$RUNNER_TEMP/image-harness/"
+          ln -s "$GITHUB_WORKSPACE/product/web/node_modules" "$RUNNER_TEMP/image-harness/node_modules"
+          "$UI_BROWSER" --version | tee "$RUNNER_TEMP/image-evidence/browser-version.txt"
+          UI_REPORT_DIR="$RUNNER_TEMP/image-evidence/browser" bun "$RUNNER_TEMP/image-harness/container-browser.mjs"
+          node ../../automation/.github/scripts/image-http.mjs
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git status --porcelain --untracked-files=all > "$RUNNER_TEMP/image-evidence/product-status-after-validation.txt"
+      - name: Preserve sanitized logs and verify cleanup
+        if: always()
+        shell: bash
+        run: bash automation/.github/scripts/image-preparation.sh finish
+      - name: Upload validation evidence only
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ghcr-pull-10630f3f183eecb6e73ddead4388cbaba2c5f60e-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/image-evidence/*.json
+            ${{ runner.temp }}/image-evidence/*.txt
+            ${{ runner.temp }}/image-evidence/*.log
+            ${{ runner.temp }}/image-evidence/Dockerfile
+            ${{ runner.temp }}/image-evidence/licenses/
+            ${{ runner.temp }}/image-evidence/browser/*.png
+            ${{ runner.temp }}/image-evidence/browser/result.json
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
