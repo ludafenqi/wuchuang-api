@@ -166,11 +166,14 @@ jobs:
           done
 
       - name: Verify OAuth inviter persistence on three real databases
+        env:
+          TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
         shell: bash
         run: |
           set -euo pipefail
-          for dsn in '' 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true' 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'; do
-            TEST_TASK_SQL_DSN="$dsn" go test ./controller -run '^TestOAuthRegistrationPersistsInviter$' -count=1 -v
+          for dialect in sqlite mysql postgres; do
+            TEST_TASK_DB_DIALECT="$dialect" go test ./controller -run '^TestOAuthRegistrationPersistsInviter$' -count=1 -v
           done
 
       - name: Verify delivered SSE settlement despite failures on three real databases
