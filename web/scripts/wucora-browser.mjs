@@ -177,7 +177,8 @@ try {
     fetch(`http://127.0.0.2:${backendPort}/api/setup`, {
       signal: AbortSignal.timeout(3000),
     }),
-    (error) => error.cause?.code === 'ECONNREFUSED',
+    (error) =>
+      error.code === 'ECONNREFUSED' || error.cause?.code === 'ECONNREFUSED',
     'HOST must restrict the real gateway listener to 127.0.0.1'
   )
   results.push({

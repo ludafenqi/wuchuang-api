@@ -58,8 +58,20 @@ export function prepareCandidate({
       'Resolution changes protected UI reference or review policy'
     )
   }
-  if (git(['merge-base', base, upstream]) === upstream)
+  if (git(['merge-base', base, upstream]) === upstream) {
+    if (resolved) {
+      git(['checkout', '-B', 'automation/upstream-sync', resolved])
+      return {
+        changed: resolved !== base,
+        base,
+        upstream,
+        candidate: resolved,
+        conflicts: [],
+        explicitResolution: resolved,
+      }
+    }
     return { changed: false, base, upstream, candidate: base, conflicts: [] }
+  }
 
   git(['checkout', '-B', 'automation/upstream-sync', base])
   let conflicts = []

@@ -287,6 +287,21 @@ test('an explicitly pinned resolution follows an actual failed merge and keeps b
   assert.equal(f.git(['rev-parse', 'main']), f.base)
 })
 
+test('an explicit reviewed SHA is retained even when main already contains the upstream batch', (t) => {
+  const f = repository(t, false)
+  f.git(['update-ref', 'refs/remotes/origin/main', f.resolved])
+  f.git(['checkout', 'prepared'])
+  f.write('review-fix.txt', 'reviewed follow-up\n')
+  const resolved = f.commit('review fix after upstream was integrated')
+  f.git(['checkout', 'main'])
+  const result = prepareCandidate({ ...f, resolved })
+  assert.equal(result.candidate, resolved)
+  assert.equal(f.git(['rev-parse', 'HEAD']), resolved)
+  assert.equal(result.changed, true)
+  assert.equal(f.git(['status', '--porcelain']), '')
+  assert.equal(f.git(['rev-parse', 'main']), f.base)
+})
+
 test('a resolution with a changed UI policy or stale pin is rejected before checkout', (t) => {
   for (const change of [
     { reviewRequired: false },
