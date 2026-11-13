@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relay/requestplugin"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -45,10 +46,43 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 	sendChan := make(chan []byte, 100)
 	receiveChan := make(chan []byte, 100)
 	errChan := make(chan error, 2)
+	recordError := func(err error) {
+		select {
+		case errChan <- err:
+		default:
+		}
+	}
 
 	usage := &dto.RealtimeUsage{}
 	localUsage := &dto.RealtimeUsage{}
 	sumUsage := &dto.RealtimeUsage{}
+
+	// The request plugins answer the client and cancel upstream responses
+	// from either reader, so each socket takes one writer at a time.
+	var clientWriteMu, targetWriteMu sync.Mutex
+	writeClient := func(message []byte) error {
+		clientWriteMu.Lock()
+		defer clientWriteMu.Unlock()
+		return helper.WssString(c, clientConn, string(message))
+	}
+	writeTarget := func(message []byte) error {
+		targetWriteMu.Lock()
+		defer targetWriteMu.Unlock()
+		return helper.WssString(c, targetConn, string(message))
+	}
+	plugins := requestplugin.NewRealtime(c, info, func(message []byte) {
+		if err := writeClient(message); err != nil {
+			recordError(fmt.Errorf("error writing to client: %v", err))
+		}
+	}, func(message []byte) {
+		if err := writeTarget(message); err != nil {
+			recordError(fmt.Errorf("error writing to target: %v", err))
+		}
+	})
+	if plugins != nil {
+		// The consume log reads what the plugins did once the session ends.
+		defer plugins.Close(info)
+	}
 
 	workers.Add(1)
 	gopool.Go(func() {
@@ -63,7 +97,7 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 				_, message, err := clientConn.ReadMessage()
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-						errChan <- errors.New("error reading from client")
+						recordError(errors.New("error reading from client"))
 					}
 					return
 				}
@@ -74,8 +108,22 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 					realtimeEvent := &dto.RealtimeEvent{}
 					err = common.Unmarshal(message, realtimeEvent)
 					if err != nil {
-						errChan <- errors.New("error unmarshalling message")
+						recordError(errors.New("error unmarshalling message"))
 						return false
+					}
+
+					if plugins != nil {
+						patched, dropped := plugins.ClientEvent(realtimeEvent.Type, message)
+						if dropped {
+							return true
+						}
+						if patched != nil {
+							message, realtimeEvent = patched, &dto.RealtimeEvent{}
+							if err = common.Unmarshal(message, realtimeEvent); err != nil {
+								recordError(errors.New("error unmarshalling message"))
+								return false
+							}
+						}
 					}
 
 					if realtimeEvent.Type == dto.RealtimeEventTypeSessionUpdate {
@@ -88,7 +136,7 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 
 					textToken, audioToken, err := countTokens(info, *realtimeEvent, info.UpstreamModelName)
 					if err != nil {
-						errChan <- errors.New("error counting text token")
+						recordError(errors.New("error counting text token"))
 						return false
 					}
 					logger.LogInfo(c, common.LogText("type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken))
@@ -97,9 +145,9 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 					localUsage.InputTokenDetails.TextTokens += textToken
 					localUsage.InputTokenDetails.AudioTokens += audioToken
 
-					err = helper.WssString(c, targetConn, string(message))
+					err = writeTarget(message)
 					if err != nil {
-						errChan <- errors.New("error writing to target")
+						recordError(errors.New("error writing to target"))
 						return false
 					}
 
@@ -128,7 +176,7 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 				_, message, err := targetConn.ReadMessage()
 				if err != nil {
 					if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-						errChan <- errors.New("error reading from target")
+						recordError(errors.New("error reading from target"))
 					}
 					return
 				}
@@ -139,10 +187,11 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 					realtimeEvent := &dto.RealtimeEvent{}
 					err = common.Unmarshal(message, realtimeEvent)
 					if err != nil {
-						errChan <- errors.New("error unmarshalling message")
+						recordError(errors.New("error unmarshalling message"))
 						return false
 					}
 
+					quota := 0
 					if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone {
 						realtimeUsage := realtimeEvent.Response.Usage
 						if realtimeUsage != nil {
@@ -157,15 +206,15 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 							// Authoritative usage replaces this response's local estimate,
 							// including when reservation expansion fails or panics.
 							localUsage = &dto.RealtimeUsage{}
-							err := preConsumeUsage(c, info, usage, sumUsage)
+							quota, err = preConsumeUsage(c, info, usage, sumUsage)
 							if err != nil {
-								errChan <- errors.New("error consume usage")
+								recordError(errors.New("error consume usage"))
 								return false
 							}
 						} else {
 							textToken, audioToken, err := countTokens(info, *realtimeEvent, info.UpstreamModelName)
 							if err != nil {
-								errChan <- errors.New("error counting text token")
+								recordError(errors.New("error counting text token"))
 								return false
 							}
 							logger.LogInfo(c, common.LogText("type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken))
@@ -174,14 +223,13 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 							localUsage.InputTokens += textToken + audioToken
 							localUsage.InputTokenDetails.TextTokens += textToken
 							localUsage.InputTokenDetails.AudioTokens += audioToken
-							err = preConsumeUsage(c, info, localUsage, sumUsage)
+							quota, err = preConsumeUsage(c, info, localUsage, sumUsage)
 							if err != nil {
-								errChan <- errors.New("error consume usage")
+								recordError(errors.New("error consume usage"))
 								return false
 							}
 						}
 						logger.LogInfo(c, common.LogText("realtime streaming sumUsage: %v", sumUsage))
-						logger.LogInfo(c, common.LogText("realtime streaming localUsage: %v", localUsage))
 						logger.LogInfo(c, common.LogText("realtime streaming localUsage: %v", localUsage))
 
 					} else if realtimeEvent.Type == dto.RealtimeEventTypeSessionUpdated || realtimeEvent.Type == dto.RealtimeEventTypeSessionCreated {
@@ -194,7 +242,7 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 					} else {
 						textToken, audioToken, err := countTokens(info, *realtimeEvent, info.UpstreamModelName)
 						if err != nil {
-							errChan <- errors.New("error counting text token")
+							recordError(errors.New("error counting text token"))
 							return false
 						}
 						logger.LogInfo(c, common.LogText("type: %s, textToken: %d, audioToken: %d", realtimeEvent.Type, textToken, audioToken))
@@ -204,9 +252,14 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 						localUsage.OutputTokenDetails.AudioTokens += audioToken
 					}
 
-					err = helper.WssString(c, clientConn, string(message))
-					if err != nil {
-						errChan <- errors.New("error writing to client")
+					if plugins != nil {
+						var responseUsage *dto.RealtimeUsage
+						if realtimeEvent.Response != nil {
+							responseUsage = realtimeEvent.Response.Usage
+						}
+						plugins.ServerEvent(realtimeEvent.Type, message, responseUsage, quota)
+					} else if err = writeClient(message); err != nil {
+						recordError(errors.New("error writing to client"))
 						return false
 					}
 
@@ -222,8 +275,10 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 		}
 	})
 
+	var streamErr error
 	select {
 	case <-finished:
+	case streamErr = <-errChan:
 	case <-c.Request.Context().Done():
 	}
 	// The request owner interrupts both blocking readers/writers, then joins them
@@ -232,18 +287,22 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 	_ = targetConn.Close()
 	workers.Wait()
 	info.StreamStatus.FinalizePanic()
-	select {
-	case err := <-errChan:
-		logger.LogError(c, common.LogText("realtime error: %s", err.Error()))
-	default:
+	if streamErr == nil {
+		select {
+		case streamErr = <-errChan:
+		default:
+		}
+	}
+	if streamErr != nil {
+		logger.LogError(c, common.LogText("realtime error: %s", streamErr.Error()))
 	}
 
 	if usage.TotalTokens != 0 {
-		_ = preConsumeUsage(c, info, usage, sumUsage)
+		_, _ = preConsumeUsage(c, info, usage, sumUsage)
 	}
 
 	if localUsage.TotalTokens != 0 {
-		_ = preConsumeUsage(c, info, localUsage, sumUsage)
+		_, _ = preConsumeUsage(c, info, localUsage, sumUsage)
 	}
 
 	// check usage total tokens, if 0, use local usage
@@ -251,9 +310,9 @@ func realtimeHandler(c *gin.Context, info *relaycommon.RelayInfo, countTokens fu
 	return info.StreamStatus.PanicError(), sumUsage
 }
 
-func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.RealtimeUsage, totalUsage *dto.RealtimeUsage) error {
+func preConsumeUsage(ctx *gin.Context, info *relaycommon.RelayInfo, usage *dto.RealtimeUsage, totalUsage *dto.RealtimeUsage) (int, error) {
 	if usage == nil || totalUsage == nil {
-		return fmt.Errorf("invalid usage pointer")
+		return 0, fmt.Errorf("invalid usage pointer")
 	}
 
 	// Move the pending fact into cumulative usage exactly once. Reservation can

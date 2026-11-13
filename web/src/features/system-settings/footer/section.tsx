@@ -196,7 +196,7 @@ export function FooterManagement(props: { settings: SiteSettings }) {
                     options: [
                       ['brand', 'Brand focused'],
                       ['developer', 'Developer platform'],
-                      ['minimal', 'Minimal'],
+                      ['minimal', 'Minimal footer layout'],
                     ],
                   },
                   {

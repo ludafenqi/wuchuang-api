@@ -129,10 +129,12 @@ func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
 	if StreamKeepAliveError(c) != nil {
 		panic(errKeepAlivePanic)
 	}
-	if previous, ok := c.Writer.(*streamKeepAliveWriter); ok {
+	if previous := keepAliveWriter(c); previous != nil {
 		select {
 		case <-previous.done:
-			c.Writer = previous.ResponseWriter
+			if c.Writer == gin.ResponseWriter(previous) {
+				c.Writer = previous.ResponseWriter
+			}
 		default:
 			return func() {}
 		}
@@ -155,6 +157,22 @@ func StartStreamKeepAlive(c *gin.Context, interval time.Duration) func() {
 	c.Writer = writer
 	go writer.keepAlive(ctx, interval)
 	return writer.stop
+}
+
+// keepAliveWriter 返回 c.Writer 链上的请求保活，包括被其他 writer（如请求插件的回复检查）包裹的情况。
+func keepAliveWriter(c *gin.Context) *streamKeepAliveWriter {
+	var writer http.ResponseWriter = c.Writer
+	for writer != nil {
+		if keepAlive, ok := writer.(*streamKeepAliveWriter); ok {
+			return keepAlive
+		}
+		unwrapper, ok := writer.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return nil
+		}
+		writer = unwrapper.Unwrap()
+	}
+	return nil
 }
 
 func (writer *streamKeepAliveWriter) keepAlive(ctx context.Context, interval time.Duration) {
