@@ -55,7 +55,7 @@ with sqlite3.connect(sys.argv[1]) as con:
         print(*row)
 PY
       ;;
-    mysql) docker exec "$MYSQL_CONTAINER" mysql -uroot -pdisposable-review-only -N -B -r "$name" -e "${1// key / \`key\` }" ;;
+    mysql) docker exec "$MYSQL_CONTAINER" mysql -uroot -pdisposable-review-only -N -B -r "$name" -e "$1" ;;
     postgres) docker exec "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -At -d "$name" -c "$1" ;;
   esac
 }
@@ -66,8 +66,10 @@ for dialect in sqlite mysql postgres; do
     sqlite="$RUNNER_TEMP/$name.sqlite"
     dsn=
     log_dsn=
+    option_key=key
     case "$dialect" in
       mysql)
+        option_key='`key`'
         docker exec "$MYSQL_CONTAINER" mysql -uroot -pdisposable-review-only -e "CREATE DATABASE $name CHARACTER SET utf8mb4; CREATE DATABASE ${name}_logs CHARACTER SET utf8mb4;"
         dsn="root:disposable-review-only@tcp(127.0.0.1:3306)/$name?parseTime=true"
         log_dsn="root:disposable-review-only@tcp(127.0.0.1:3306)/${name}_logs?parseTime=true"
@@ -84,8 +86,8 @@ for dialect in sqlite mysql postgres; do
       start base "$dialect-$mode-base"
       stop
       for pair in CheckSensitiveEnabled:true CheckSensitiveOnPromptEnabled:true SensitiveWords:upgrade_fixture; do
-        db "DELETE FROM options WHERE key = '${pair%:*}'"
-        db "INSERT INTO options (key,value) VALUES ('${pair%:*}','${pair#*:}')"
+        db "DELETE FROM options WHERE $option_key = '${pair%:*}'"
+        db "INSERT INTO options ($option_key,value) VALUES ('${pair%:*}','${pair#*:}')"
       done
       db "INSERT INTO system_tasks (task_id,type,status) VALUES ('legacy_fixture','legacy_fixture','succeeded')"
     fi
@@ -108,7 +110,7 @@ for dialect in sqlite mysql postgres; do
           echo "Unique task ID constraint was lost on $dialect" >&2
           exit 1
         fi
-        test "$(db "SELECT count(*) FROM options WHERE key='SensitiveWords'")" = 0
+        test "$(db "SELECT count(*) FROM options WHERE $option_key='SensitiveWords'")" = 0
         db "SELECT value FROM options WHERE value LIKE '%upgrade_fixture%'" | python3 -c 'import json,sys; items=json.load(sys.stdin); assert len(items)==1 and items[0]["plugin"]=="request-filter" and items[0]["enabled"] and items[0]["config"]["keywords"]=="upgrade_fixture"'
       fi
       echo "$dialect $mode start $attempt passed"
