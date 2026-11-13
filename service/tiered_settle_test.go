@@ -344,6 +344,27 @@ func (s *recordingBillingSettler) ReserveBeforeSubmit(targetQuota int) error {
 	return s.Reserve(targetQuota)
 }
 
+func TestRealtimeReservationReportsOnlyNewlyReservedQuota(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	const alreadyReserved = 5
+	billing := &recordingBillingSettler{preConsumedQuota: alreadyReserved}
+	info := &relaycommon.RelayInfo{
+		Billing: billing, OriginModelName: "gpt-4o-mini", UsingGroup: "default",
+	}
+	usage := &dto.RealtimeUsage{}
+	usage.InputTokenDetails.TextTokens = 1_000
+
+	charged, err := PreWssConsumeQuota(ctx, info, usage)
+	require.NoError(t, err)
+	require.Positive(t, charged)
+	assert.Equal(t, billing.preConsumedQuota-alreadyReserved, charged)
+
+	charged, err = PreWssConsumeQuota(ctx, info, usage)
+	require.NoError(t, err)
+	assert.Zero(t, charged, "a repeated cumulative total must not charge twice")
+}
+
 func TestPrepareTieredBillingForSelectedGroupUpdatesReservation(t *testing.T) {
 	const expr = `tier("base", p)`
 	billing := &recordingBillingSettler{preConsumedQuota: 50_000}

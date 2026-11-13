@@ -119,6 +119,19 @@ jobs:
       - name: Verify auth cache operations on a real six-node Redis Cluster
         run: bash .github/scripts/verify-redis-cluster.sh
 
+      - name: Verify provider plugins and node sync on three real databases
+        env:
+          TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          TEST_POSTGRES_DSN: 'postgres://postgres:disposable-review-only@127.0.0.1:5432/review?sslmode=disable'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./model -run '^(TestSystemTaskHistoryDatabaseMatrix|TestDeleteFinishedSystemTasksDatabaseMatrix|TestJSONColumnDatabaseRoundTrip|TestMigrateSensitiveWords.*)$' -count=1 -v
+          go test ./controller -run '^TestProviderChannelManagementDatabaseMatrix$' -count=1 -v
+          for dialect in sqlite mysql postgres; do
+            TEST_TASK_DB_DIALECT="$dialect" go test ./service -run '^TestNodeSyncAppliesAnOptionAnotherNodeWrote$' -count=1 -v
+          done
+
       - name: Verify atomic subscription refunds on three real databases
         shell: bash
         run: |
