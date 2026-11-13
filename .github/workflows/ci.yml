@@ -128,6 +128,9 @@ jobs:
           set -euo pipefail
           go test ./model -run '^(TestSystemTaskHistoryDatabaseMatrix|TestDeleteFinishedSystemTasksDatabaseMatrix|TestJSONColumnDatabaseRoundTrip|TestMigrateSensitiveWords.*)$' -count=1 -v
           go test ./controller -run '^TestProviderChannelManagementDatabaseMatrix$' -count=1 -v
+          for dialect in sqlite mysql postgres; do
+            TEST_TASK_DB_DIALECT="$dialect" go test ./service -run '^TestNodeSyncAppliesAnOptionAnotherNodeWrote$' -count=1 -v
+          done
 
       - name: Verify atomic subscription refunds on three real databases
         shell: bash

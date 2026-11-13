@@ -161,17 +161,6 @@ func TestAdaptorProtectsCustomQueryAuthLogsWithoutChangingRequests(t *testing.T)
 // URL, and a channel proxy is dialed before the upstream; a failed handshake
 // must hide both.
 func TestAdaptorMasksDialedHostsInDialFailure(t *testing.T) {
-	originalDialer := websocket.DefaultDialer
-	dialer := *originalDialer
-	dialer.NetDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		if strings.HasPrefix(address, "localhost:") {
-			return (&net.Dialer{}).DialContext(ctx, network, address)
-		}
-		return nil, fmt.Errorf("dial %s %s: test connection failure", network, address)
-	}
-	websocket.DefaultDialer = &dialer
-	t.Cleanup(func() { websocket.DefaultDialer = originalDialer })
-
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
@@ -197,6 +186,18 @@ func TestAdaptorMasksDialedHostsInDialFailure(t *testing.T) {
 		_ = buffer.Flush()
 	}))
 	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	require.NoError(t, err)
+	originalDialer := websocket.DefaultDialer
+	dialer := *originalDialer
+	dialer.NetDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address == proxyURL.Host || address == net.JoinHostPort("localhost", upstreamURL.Port()) {
+			return (&net.Dialer{}).DialContext(ctx, network, address)
+		}
+		return nil, fmt.Errorf("dial %s %s: test connection failure", network, address)
+	}
+	websocket.DefaultDialer = &dialer
+	t.Cleanup(func() { websocket.DefaultDialer = originalDialer })
 	for _, tc := range []struct {
 		name   string
 		proxy  string

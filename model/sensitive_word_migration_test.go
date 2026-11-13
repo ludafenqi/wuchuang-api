@@ -49,38 +49,43 @@ func TestMigrateSensitiveWords(t *testing.T) {
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			db := useFrontendOptionMigrationDB(t)
-			require.NoError(t, db.AutoMigrate(&SystemTask{}))
-			previousLanguage := common.DefaultLanguage
-			common.DefaultLanguage = tc.language
-			t.Cleanup(func() { common.DefaultLanguage = previousLanguage })
-			for key, value := range tc.options {
-				require.NoError(t, db.Create(&Option{Key: key, Value: value}).Error)
-			}
+			for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+				t.Run(dialect, func(t *testing.T) {
+					db := useSystemTaskMatrixDB(t, dialect)
+					require.NoError(t, db.AutoMigrate(&Option{}))
+					t.Cleanup(func() { require.NoError(t, db.Migrator().DropTable(&Option{})) })
+					previousLanguage := common.DefaultLanguage
+					common.DefaultLanguage = tc.language
+					t.Cleanup(func() { common.DefaultLanguage = previousLanguage })
+					for key, value := range tc.options {
+						require.NoError(t, db.Create(&Option{Key: key, Value: value}).Error)
+					}
 
-			require.NoError(t, MigrateSensitiveWords())
-			for _, key := range retiredSensitiveOptionKeys {
-				requireOptionMissing(t, db, key)
-			}
-			saved := requireOptionValue(t, db, request_plugin_setting.InstancesOption)
-			instances := gjson.Parse(saved).Array()
-			require.Len(t, instances, len(tc.instances)+1)
-			for index, instance := range tc.instances {
-				assert.JSONEq(t, instance, instances[index].Raw)
-			}
-			migrated := instances[len(tc.instances)]
-			assert.Regexp(t, `^rp_[a-z2-7]{8}$`, migrated.Get("id").Str)
-			withoutID, err := sjson.Delete(migrated.Raw, "id")
-			require.NoError(t, err)
-			assert.JSONEq(t, `{"name":"`+tc.name+`","plugin":"request-filter","enabled":`+map[bool]string{true: "true", false: "false"}[tc.enabled]+`,
+					require.NoError(t, MigrateSensitiveWords())
+					for _, key := range retiredSensitiveOptionKeys {
+						requireOptionMissing(t, db, key)
+					}
+					saved := requireOptionValue(t, db, request_plugin_setting.InstancesOption)
+					instances := gjson.Parse(saved).Array()
+					require.Len(t, instances, len(tc.instances)+1)
+					for index, instance := range tc.instances {
+						assert.JSONEq(t, instance, instances[index].Raw)
+					}
+					migrated := instances[len(tc.instances)]
+					assert.Regexp(t, `^rp_[a-z2-7]{8}$`, migrated.Get("id").Str)
+					withoutID, err := sjson.Delete(migrated.Raw, "id")
+					require.NoError(t, err)
+					assert.JSONEq(t, `{"name":"`+tc.name+`","plugin":"request-filter","enabled":`+map[bool]string{true: "true", false: "false"}[tc.enabled]+`,
 				"global":true,"groups":[],"models":[],
 				"config":{"rules":[],"keywords":"Bad\nworse","keywordsCaseSensitive":false,"message":"","replies":false}}`, withoutID)
-			revision := optionsRevision(t)
-			assert.NotZero(t, revision, "the other nodes reload the options")
+					revision := optionsRevision(t)
+					assert.NotZero(t, revision, "the other nodes reload the options")
 
-			require.NoError(t, MigrateSensitiveWords())
-			assert.Equal(t, saved, requireOptionValue(t, db, request_plugin_setting.InstancesOption))
-			assert.Equal(t, revision, optionsRevision(t))
+					require.NoError(t, MigrateSensitiveWords())
+					assert.Equal(t, saved, requireOptionValue(t, db, request_plugin_setting.InstancesOption))
+					assert.Equal(t, revision, optionsRevision(t))
+				})
+			}
 		})
 	}
 }
