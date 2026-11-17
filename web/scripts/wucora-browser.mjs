@@ -912,6 +912,7 @@ try {
               name: 'Rules for vip',
               exact: true,
             })
+            stage = 'group-collapsed-trigger-' + width + '-' + theme
             await toggle.waitFor()
             assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
             assert.equal(
@@ -937,8 +938,10 @@ try {
             await dialog
               .getByRole('button', { name: 'Update', exact: true })
               .click()
+            stage = 'group-dialog-close-' + width + '-' + theme
             await dialog.waitFor({ state: 'detached' })
-            await page.getByText('0.6', { exact: true }).waitFor()
+            stage = 'group-updated-ratio-' + width + '-' + theme
+            await page.getByRole('cell', { name: /^0\.6\b/ }).waitFor()
             const [response] = await Promise.all([
               page.waitForResponse(
                 (r) =>
