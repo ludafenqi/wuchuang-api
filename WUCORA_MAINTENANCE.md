@@ -4,15 +4,24 @@
 
 ## 固定版本
 
-- 本轮开始的 fork main：`fe24147d2e105f570f0a80e669d708d54a3e7efd`。
-- 前次上游：`dd50ee0a567b810ea60e74dcd9ea6a5786b37b91`。
-- 本轮固定上游：`bd6bb53019fb7e21804b31ab7365c9b2097f4b6c`；重新获取两个远端后与审查快照相同，没有追加范围。
-- 新增四个提交：DeepSeek 高级自定义搜索/抓取路径、OAuth 邀请人持久化、协议文案国际化、`HOST` 监听地址。
-- UI 参考：`.github/wucora-ui.json` 的 `uiReference=b6f0b02864fe13cdd30dd8c443e1af1e53646c5b`；`referenceRun`、镜像 digest、`reviewRequired` 均保留。
+- 本轮开始的 fork main：a2bd1733f2b48f669fb8bc28272274bbba77f5e8；保留已合并 PR #15–#17。
+- 前次上游：f36c460f0e86bb814c88642daf3e4764a3886a8a。
+- 本轮固定上游：669d774976369e986f03b6e24fff1042f6f94832；重新获取后快照一致，实施中不继续追赶。
+- 官方 release v1.0.0-rc.51（c9c6da2786b6a0912215127e78e28fbc6650c85f）已包含在本轮 fork 基线，不重复同步或降级。
+- 五个新增提交：特殊分组倍率默认折叠、批量渠道标签的事务内读取、缓存计费类别与时长标签统一、Gemini 文本原样拼接、按模型映射 Gemini 4 thinking levels。
+- UI 参考仍为 .github/wucora-ui.json 的 b6f0b02864fe13cdd30dd8c443e1af1e53646c5b；referenceRun、referenceImage、reviewRequired 均保留。
+
+## 本轮冲突与验收范围
+
+七种语言按原有严格三方键值合并，通过现有 add-missing-keys.mjs 写入和 i18n:sync 规范化；每种语言保留 109 个 fork 独有键及本批 23 个上游新增键。static-keys.ts 的两个新增区块分别保留页脚/许可键和缓存分类键，没有整文件选择 ours/theirs，也没有放宽语义合并器。resolved_candidate 指向含双方祖先的准确提交；再次规范化必须零差异。
+
+复用共享 Collapsible、StaticDataTable、StaticRowActions、Dialog、现有价格与货币格式化封装；分组折叠触发器明确保留原生按钮语义。渠道矩阵延伸现有 model/channel_status_test.go，覆盖设置/清空、读取与能力重建失败回滚、不发布失败同步，以及另一连接只看到已提交标签和能力。真实 SQLite/MySQL/PostgreSQL 与相关 race 验证接入原 CI/同步门禁。
+
+浏览器保留原有场景，在原截图完成后用同一隔离网关增测六组视口/主题的分组折叠、编辑和真实保存，以及 GPT 30 分钟/12 小时、Claude 5 分钟/1 小时、Gemini 缓存读取的价格展示。新场景不连接真实付费上游；结果与截图按源码 SHA、视口、主题和场景归档。Gemini 文字/空白、引用位置和模型 thinking levels 复用上游转换回归；不把协议单测冒充真实供应商调用成功。
 
 ## 定制清单
 
-审查基线的净差异为 247 个文件（142 个 web、42 个非测试 Go 文件等）。下表按维护责任分组，不将每个文件误算成独立功能。新增上游版本前使用 `git diff --name-status <integratedUpstream>..origin/main` 重新核对。
+历史审查基线的净差异为 247 个文件（142 个 web、42 个非测试 Go 文件等）。下表按维护责任分组，不将每个文件误算成独立功能。新增上游版本前使用 `git diff --name-status <integratedUpstream>..origin/main` 重新核对。
 
 | 用途 | 主要路径 | 回归保护 | 上游提供替代实现时 |
 | --- | --- | --- | --- |
@@ -27,7 +36,7 @@
 | Vertex 凭据缓存、重试请求体、渠道回滚 | `relay/channel/vertex/service_account.go`、`relay/channel/api_request.go`、相关测试 | Vertex race 测试、GetBody 重放测试、渠道创建/回滚三数据库验证 | 上游实现满足失效、并发、独立凭据隔离后再移除补丁 |
 | 同步候选和审阅证据 | `.github/scripts/{prepare-upstream-candidate,merge-upstream-locales,upstream-review}.mjs`、两套 CI、`web/scripts/wucora-{quality,browser}.mjs` | 真实临时 Git 仓库测试、重复键/语义变化/异常中断/显式 SHA、质量基线、截图制品 | 保留失败阻断、准确 SHA、人工审阅和 merge ancestry；不能以删除门禁消除失败 |
 
-## 本轮耦合点与验收
+## 历史同步保护与验收
 
 无文本冲突的合并也会把 `footer.new\u0061pi.projectAttributionSuffix` 恢复为等价字面键。候选准备现在在 merge commit 前运行 `i18n:sync`：先严格解析所有顶层语言 JSON（包括新增语言），拒绝重复或转义别名键，再核对每个解析键和值完全相同，全部通过后才暂存。失败恢复规范化前的原文件并中止合并。冲突路径仍使用原三方语义合并，不猜测翻译。
 
