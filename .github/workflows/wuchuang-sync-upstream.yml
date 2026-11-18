@@ -138,6 +138,17 @@ jobs:
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
         run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
 
+      - name: Verify batch channel tag atomicity on three real databases
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        env:
+          TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
+          TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
+        run: go test ./model -run '^TestBatchSetChannelTagDatabaseMatrix$' -count=1 -timeout=180s -v
+
+      - name: Verify batch channel tag visibility under the race detector
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        run: go test -race ./model -run '^TestBatchSetChannelTagDatabaseMatrix$/sqlite' -count=1 -timeout=180s
+
       - name: Verify auth cache operations on a real six-node Redis Cluster
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         run: bash .github/scripts/verify-redis-cluster.sh

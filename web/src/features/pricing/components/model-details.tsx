@@ -64,8 +64,9 @@ import { useSystemConfigStore } from '@/stores/system-config-store'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import { useBillingTime } from '../hooks/use-billing-time'
 import { usePricingData } from '../hooks/use-pricing-data'
-import type { ParsedTaskTier } from '../lib/billing-expr'
+import type { ParsedTaskTier, ParsedTier } from '../lib/billing-expr'
 import { formatBillingCondition } from '../lib/billing-expression/condition-display'
+import { getTierCachePricingMode } from '../lib/cache-pricing'
 import {
   formatTaskUsageUnitPrice,
   getDynamicPriceEntries,
@@ -606,10 +607,10 @@ function ModelHeader(props: { model: PricingModel }) {
   const description = model.description || model.vendor_description || null
 
   return (
-    <header className='bg-card rounded-xl border p-5 sm:p-6'>
-      <div className='flex min-w-0 items-start gap-3'>
+    <header className='wcai-model-header pb-4'>
+      <div className='wcai-model-header-row flex items-center gap-2.5'>
         {modelIcon}
-        <h1 className='min-w-0 flex-1 text-2xl font-semibold tracking-tight [overflow-wrap:anywhere] sm:text-3xl'>
+        <h1 className='font-mono text-xl font-bold tracking-tight sm:text-2xl'>
           {model.model_name}
         </h1>
         <CopyButton
@@ -960,10 +961,19 @@ function getDynamicPriceFields(
   tiers: DynamicPricingTier[],
   options: DynamicPriceOptions
 ) {
+  const cachePricingMode = getTierCachePricingMode(
+    tiers.filter((tier): tier is ParsedTier => !('unitPrices' in tier)),
+    options.modelName
+  )
   return [
     ...new Map(
       tiers
-        .flatMap((tier) => getDynamicPriceEntries(tier, options))
+        .flatMap((tier) =>
+          getDynamicPriceEntries(tier, {
+            ...options,
+            cachePricingMode,
+          })
+        )
         .map((entry) => [entry.field, entry])
     ).values(),
   ]
@@ -1183,6 +1193,7 @@ function ProviderGroupPricingSection(
       props.model.billing_usage_examples
     )
     const priceFields = getDynamicPriceFields(dynamicTiers, {
+      modelName: props.model.model_name,
       tokenUnit: props.tokenUnit,
       showRechargePrice,
       priceRate: props.priceRate,
@@ -1196,6 +1207,7 @@ function ProviderGroupPricingSection(
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
+            modelName: props.model.model_name,
             tokenUnit: props.tokenUnit,
             showRechargePrice,
             priceRate: props.priceRate,
@@ -1518,7 +1530,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
       <ModelHeader model={props.model} />
 
       <Tabs defaultValue='overview' className='gap-4'>
-        <TabsList className='bg-background sticky top-0 z-10 grid w-full grid-cols-3 gap-1 rounded-lg border p-1 group-data-horizontal/tabs:h-auto'>
+        <TabsList className='wcai-model-tabs bg-muted/60 grid w-full grid-cols-3 gap-1 rounded-lg p-1 group-data-horizontal/tabs:h-auto'>
           {TAB_VALUES.map((value) => {
             const Icon = TAB_META[value].icon
             return (
@@ -1550,6 +1562,7 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             )}
             {isDynamic && !simpleTaskPricing && (
               <DynamicPricingBreakdown
+                modelName={baseModel.model_name}
                 billingExpr={baseModel.billing_expr}
                 usageSchema={baseModel.billing_usage_schema}
                 taskPriceOptions={{

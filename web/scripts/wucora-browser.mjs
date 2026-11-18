@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -26,6 +26,10 @@ import { chromium, request } from 'playwright'
 
 // Runs only against a new, disposable gateway. No remote services or real accounts.
 const root = path.resolve('..')
+const sourceSHA = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: root,
+  encoding: 'utf8',
+}).trim()
 const output = path.resolve(
   process.env.UI_REPORT_DIR || '../.local-tests/ui-regression'
 )
@@ -776,6 +780,315 @@ try {
       await context.close()
     }
   }
+
+  if (!logoutOnly) {
+    let stage = 'seed-batch-fixtures'
+    let fixture
+    try {
+      const cacheModels = [
+        {
+          name: 'gpt-ui-cache',
+          expression:
+            'tier("cache", p * 4 + c * 20 + cr * 0 + cc * 5 + cc12h * 10)',
+          labels: ['Cache Write (30m)', 'Cache Write (12h)'],
+        },
+        {
+          name: 'claude-ui-cache',
+          expression:
+            'tier("cache", p * 4 + c * 20 + cr * 0 + cc * 5 + cc1h * 8)',
+          labels: ['Cache Write (5m)', 'Cache Write (1h)'],
+        },
+        {
+          name: 'gemini-ui-cache',
+          expression: 'tier("cache", p * 4 + c * 20 + cr * 0.4)',
+          labels: ['Cache Read'],
+        },
+      ]
+      fixture = await browser.newContext()
+      const signedIn = await fixture.request
+        .post(origin + '/api/user/login', { data: credentials })
+        .then((r) => r.json())
+      assert.equal(signedIn.success, true)
+      const headers = { Authorization: 'Bearer ' + signedIn.data.access_token }
+      const created = await fixture.request
+        .post(origin + '/api/channel', {
+          headers,
+          data: {
+            mode: 'single',
+            channel: {
+              type: 1,
+              name: 'LOCAL CACHE DISPLAY FIXTURE',
+              key: 'sk-fictional-ui-only',
+              base_url: 'http://127.0.0.1:' + upstream.address().port,
+              models: cacheModels.map((model) => model.name).join(','),
+              group: 'default',
+              status: 1,
+            },
+          },
+        })
+        .then((r) => r.json())
+      assert.equal(created.success, true)
+      for (const model of cacheModels) {
+        const snapshot = await fixture.request
+          .get(origin + '/api/option/model_pricing?model=' + model.name, {
+            headers,
+          })
+          .then((r) => r.json())
+        assert.equal(snapshot.success, true)
+        const saved = await fixture.request
+          .patch(origin + '/api/option/model_pricing', {
+            headers,
+            data: {
+              changes: [
+                {
+                  model_name: model.name,
+                  expected_version:
+                    snapshot.data.entries[0]?.version ||
+                    snapshot.data.empty_version,
+                  pricing: {
+                    'billing_setting.billing_mode': 'tiered_expr',
+                    'billing_setting.billing_expr': model.expression,
+                  },
+                },
+              ],
+            },
+          })
+          .then((r) => r.json())
+        assert.equal(saved.success, true)
+      }
+      for (const theme of ['light', 'dark']) {
+        for (const width of [1440, 390, 320]) {
+          stage = 'group-editor-' + width + '-' + theme
+          const context = await browser.newContext({
+            viewport: { width, height: 900 },
+            colorScheme: theme,
+            reducedMotion: 'reduce',
+          })
+          try {
+            await context.addInitScript((mode) => {
+              localStorage.setItem('i18nextLng', 'en')
+              localStorage.setItem('newapi:theme:v1:mode', mode)
+            }, theme)
+            await context.route('**/*', (route) =>
+              new URL(route.request().url()).origin === origin
+                ? route.continue()
+                : route.abort()
+            )
+            const login = await context.request
+              .post(origin + '/api/user/login', { data: credentials })
+              .then((r) => r.json())
+            assert.equal(login.success, true)
+            const auth = { Authorization: 'Bearer ' + login.data.access_token }
+            for (const [key, value] of [
+              ['GroupRatio', { default: 1, vip: 0.8 }],
+              [
+                'GroupGroupRatio',
+                { vip: { default: 0.55 }, default: { vip: 1.2 } },
+              ],
+            ]) {
+              const seeded = await context.request
+                .put(origin + '/api/option/', {
+                  headers: auth,
+                  data: { key, value: JSON.stringify(value) },
+                })
+                .then((r) => r.json())
+              assert.equal(seeded.success, true)
+            }
+            const page = await context.newPage()
+            page.on('pageerror', (error) =>
+              errors.push({
+                theme,
+                width,
+                url: page.url(),
+                message: error.message,
+              })
+            )
+            const groupRoute = '/system-settings/billing/group-pricing'
+            await page.goto(origin + groupRoute)
+            await page
+              .getByRole('tab', { name: 'Special ratio rules', exact: true })
+              .click()
+            const toggle = page.getByRole('button', {
+              name: 'Rules for vip',
+              exact: true,
+            })
+            stage = 'group-collapsed-trigger-' + width + '-' + theme
+            await toggle.waitFor()
+            assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
+            assert.equal(
+              await page.getByText('0.55', { exact: true }).count(),
+              0
+            )
+            await page.screenshot({
+              path: path.join(
+                output,
+                'groups-collapsed-' + width + '-' + theme + '.png'
+              ),
+              fullPage: true,
+            })
+            await toggle.click()
+            assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
+            const row = page.getByRole('row').filter({ hasText: '0.55' })
+            await row.getByRole('button', { name: 'Edit', exact: true }).click()
+            const dialog = page.getByRole('dialog', {
+              name: 'Edit ratio override',
+              exact: true,
+            })
+            await dialog.getByPlaceholder('1', { exact: true }).fill('0.6')
+            await dialog
+              .getByRole('button', { name: 'Update', exact: true })
+              .click()
+            stage = 'group-dialog-close-' + width + '-' + theme
+            await dialog.waitFor({ state: 'detached' })
+            stage = 'group-updated-ratio-' + width + '-' + theme
+            await page.getByRole('cell', { name: /^0\.6\b/ }).waitFor()
+            const [response] = await Promise.all([
+              page.waitForResponse(
+                (r) =>
+                  new URL(r.url()).pathname === '/api/option/' &&
+                  r.request().method() === 'PUT' &&
+                  r.request().postDataJSON()?.key === 'GroupGroupRatio'
+              ),
+              page
+                .getByRole('button', {
+                  name: 'Save group settings',
+                  exact: true,
+                })
+                .filter({ visible: true })
+                .first()
+                .click(),
+            ])
+            assert.equal((await response.json()).success, true)
+            const options = await context.request
+              .get(origin + '/api/option/', { headers: auth })
+              .then((r) => r.json())
+            assert.equal(options.success, true)
+            assert.deepEqual(
+              JSON.parse(
+                options.data.find((o) => o.key === 'GroupGroupRatio').value
+              ),
+              { vip: { default: 0.6 }, default: { vip: 1.2 } }
+            )
+            assert.ok(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth + 1
+              )
+            )
+            await page.screenshot({
+              path: path.join(
+                output,
+                'groups-edited-' + width + '-' + theme + '.png'
+              ),
+              fullPage: true,
+            })
+            results.push({
+              route: groupRoute,
+              theme,
+              width,
+              status: 'PASS',
+              batch: '669d7749',
+              scope:
+                'default collapsed, expand to edit, real saved override updated; other rule preserved',
+            })
+
+            for (const model of cacheModels) {
+              stage = 'cache-pricing-' + model.name + '-' + width + '-' + theme
+              const route = '/pricing/' + model.name
+              await page.goto(origin + route + '?tokenUnit=M')
+              await page
+                .getByRole('heading', { name: model.name, exact: true })
+                .waitFor()
+              const title = page.getByRole('heading', {
+                name: model.name,
+                exact: true,
+              })
+              assert.ok(
+                await title.evaluate(
+                  (element) => element.scrollWidth <= element.clientWidth + 1
+                ),
+                'Model names remain readable inside the shared detail header'
+              )
+              const tabs = page.getByRole('tablist').first()
+              const initialTop = await tabs.evaluate(
+                (element) => element.getBoundingClientRect().top
+              )
+              await page.evaluate(
+                (top) =>
+                  window.scrollTo({ top: top + 80, behavior: 'instant' }),
+                initialTop
+              )
+              const pinnedTop = await tabs.evaluate(
+                (element) => element.getBoundingClientRect().top
+              )
+              assert.ok(
+                (await page.evaluate(() => window.scrollY)) > initialTop &&
+                  pinnedTop >= 0 &&
+                  pinnedTop <= 1,
+                'Model detail tabs stay reachable while scrolling the price table'
+              )
+              await page.evaluate(() =>
+                window.scrollTo({ top: 0, behavior: 'instant' })
+              )
+              for (const label of model.labels) {
+                await page.getByText(label, { exact: true }).first().waitFor()
+              }
+              if (model.name === 'gemini-ui-cache') {
+                assert.equal(
+                  await page.getByText(/Cache Write/).count(),
+                  0,
+                  'Gemini cache reads must not invent write duration prices'
+                )
+              } else {
+                assert.match(
+                  await page.locator('main').innerText(),
+                  /\$\s*0(?:\.0+)?\b/,
+                  'Explicit zero cache read price remains visible'
+                )
+              }
+              assert.ok(
+                await page.evaluate(
+                  () => document.documentElement.scrollWidth <= innerWidth + 1
+                )
+              )
+              await page.screenshot({
+                path: path.join(
+                  output,
+                  'cache-' + model.name + '-' + width + '-' + theme + '.png'
+                ),
+                fullPage: true,
+              })
+              results.push({
+                route,
+                theme,
+                width,
+                status: 'PASS',
+                batch: '669d7749',
+                scope:
+                  'real saved expression, model-specific cache durations and explicit zero display',
+                expectedLabels: model.labels,
+              })
+            }
+          } finally {
+            await context.close()
+          }
+        }
+      }
+    } catch (error) {
+      const message = String(error.message || error)
+        .split('\n')[0]
+        .replaceAll(/Bearer [A-Za-z0-9._~+\/=-]+/g, 'Bearer [redacted]')
+        .replaceAll(
+          /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g,
+          '[redacted JWT]'
+        )
+      throw new Error(
+        'Batch 669d7749 regression failed at ' + stage + ': ' + message
+      )
+    } finally {
+      await fixture?.close()
+    }
+  }
+
   assert.deepEqual(errors, [])
 } catch (error) {
   results.push({ status: 'FAIL', message: error.stack })
@@ -791,6 +1104,10 @@ try {
     JSON.stringify(
       {
         root,
+        sourceSHA,
+        integratedUpstream: JSON.parse(
+          fs.readFileSync(path.join(root, '.github/wucora-ui.json'), 'utf8')
+        ).integratedUpstream,
         assets,
         browser: process.env.UI_BROWSER || 'playwright Chromium',
         check: logoutOnly ? 'logout' : 'full',
