@@ -91,6 +91,8 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 		{name: "GPT6 luna", model: "gpt-6-luna", upstream: "gpt-6-luna", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens"},
 		{name: "GPT6.1 sol", model: "gpt-6.1-sol", upstream: "gpt-6.1-sol", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens"},
 		{name: "GPT6.1 terra", model: "gpt-6.1-terra", upstream: "gpt-6.1-terra", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens"},
+		{name: "GPT6.2 astra", model: "gpt-6.2-astra", upstream: "gpt-6.2-astra", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens"},
+		{name: "GPT6.2 sol Azure stream", model: "gpt-6.2-sol", upstream: "gpt-6.2-sol", channelType: constant.ChannelTypeAzure, stream: true, wantLimit: "max_completion_tokens"},
 		{name: "alias maps to GPT6", model: "customer-model", upstream: "gpt-6-astra", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens"},
 		{name: "GPT5 alias maps to Qwen", model: "gpt-5.6-luna", upstream: "qwen-turbo", channelType: constant.ChannelTypeAli, wantLimit: "max_tokens"},
 		{name: "GPT5 stream", model: "gpt-5.6-luna", upstream: "gpt-5.6-luna", channelType: constant.ChannelTypeOpenAI, stream: true, wantLimit: "max_completion_tokens"},
@@ -150,6 +152,11 @@ func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 		{name: "GPT6.1 sol drops sampling", model: "gpt-6.1-sol", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6.1 terra default drops sampling", model: "gpt-6.1-terra", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6.1 terra none keeps sampling", model: "gpt-6.1-terra", effort: "none", wantEffort: "none", wantRole: "developer", wantParams: sampling},
+		{name: "GPT6.2 sol drops sampling", model: "gpt-6.2-sol", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.2 astra low drops sampling", model: "gpt-6.2-astra", effort: "low", wantEffort: "low", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.2 astra dated snapshot", model: "gpt-6.2-astra-2026-11-18", effort: "high", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.2 sol low drops sampling", model: "gpt-6.2-sol", effort: "low", wantEffort: "low", wantRole: "developer", wantParams: `{}`},
+		{name: "unknown GPT6.2 named variant keeps parameters", model: "gpt-6.2-sol-custom", wantRole: "system", wantParams: sampling},
 		{name: "none effort suffix", model: "gpt-5.2-none", wantModel: "gpt-5.2", wantEffort: "none", wantRole: "developer", wantParams: sampling},
 		{name: "modifier overrides explicit effort", model: "gpt-5.2@thinking:off", effort: "high", wantModel: "gpt-5.2", wantEffort: "none", wantRole: "developer", wantParams: sampling},
 		{name: "mapped modifier wins", model: "customer-model@thinking:off", mapping: map[string]string{"customer-model": "gpt-5.2@effort:high"}, wantModel: "gpt-5.2", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
@@ -201,7 +208,7 @@ func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 }
 
 func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
-	for _, modelName := range []string{"gpt-5", "o3-mini", "gpt-6-astra"} {
+	for _, modelName := range []string{"gpt-5", "o3-mini", "gpt-6-astra", "gpt-6.2-astra", "gpt-6.2-sol"} {
 		for _, tt := range []struct {
 			name  string
 			input string
