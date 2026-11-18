@@ -998,6 +998,37 @@ try {
               await page
                 .getByRole('heading', { name: model.name, exact: true })
                 .waitFor()
+              const title = page.getByRole('heading', {
+                name: model.name,
+                exact: true,
+              })
+              assert.ok(
+                await title.evaluate(
+                  (element) => element.scrollWidth <= element.clientWidth + 1
+                ),
+                'Model names remain readable inside the shared detail header'
+              )
+              const tabs = page.getByRole('tablist').first()
+              const initialTop = await tabs.evaluate(
+                (element) => element.getBoundingClientRect().top
+              )
+              await page.evaluate(
+                (top) =>
+                  window.scrollTo({ top: top + 80, behavior: 'instant' }),
+                initialTop
+              )
+              const pinnedTop = await tabs.evaluate(
+                (element) => element.getBoundingClientRect().top
+              )
+              assert.ok(
+                (await page.evaluate(() => window.scrollY)) > initialTop &&
+                  pinnedTop >= 0 &&
+                  pinnedTop <= 1,
+                'Model detail tabs stay reachable while scrolling the price table'
+              )
+              await page.evaluate(() =>
+                window.scrollTo({ top: 0, behavior: 'instant' })
+              )
               for (const label of model.labels) {
                 await page.getByText(label, { exact: true }).first().waitFor()
               }

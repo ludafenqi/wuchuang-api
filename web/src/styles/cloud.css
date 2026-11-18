@@ -195,6 +195,26 @@ For commercial licensing, please contact support@quantumnous.com
   box-shadow: none;
 }
 
+/* Keep model-detail presentation beside the shared WuCora geometry while
+ * retaining the upstream header, tabs, copy action and pricing logic. */
+.wcai-model-header {
+  @apply bg-card rounded-xl border p-5 sm:p-6;
+}
+
+.wcai-model-header-row {
+  @apply min-w-0 items-start gap-3;
+}
+
+.wcai-model-header h1 {
+  @apply min-w-0 flex-1 text-2xl font-semibold sm:text-3xl;
+  font-family: inherit;
+  overflow-wrap: anywhere;
+}
+
+.wcai-model-tabs {
+  @apply bg-background sticky top-0 z-10 border;
+}
+
 .wcai-model-card {
   border: 1px solid var(--border);
   --tw-ring-color: transparent;
