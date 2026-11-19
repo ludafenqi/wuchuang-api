@@ -2,7 +2,23 @@
 
 本 fork 保留 QuantumNous/new-api 的业务实现与提交祖先。外观集中在主题变量、布局和共享组件；合入上游新增业务时，不用旧 `web/` 覆盖，也不整文件选择 ours/theirs。版权头、LICENSE、作者与许可信息继续保留。
 
-## 本轮 PR #19：固定对象与审阅边界
+## 品牌资源优化（2026-11-19）
+
+基于 PR #19 已验证并合并的 `9cff2ff88d0a5e39662a010cfc58d6e4cd1a5891` 独立实施，不追加上游批次，不改写 PR #19 的发布记录；这些新资源不属于此前已发布的镜像。
+
+| 实际用途 | 资源 | 像素尺寸 | 字节数 | 相对旧 PNG 减少 |
+| --- | --- | --- | --- | --- |
+| 导航、侧栏、登录及演示页脚；支持最大 36 CSS px 的 3× DPR | `web/public/wucora-logo-128.webp` | 128×128 | 9,092 | 99.151% |
+| 首页装饰及页脚；支持最大 64 CSS px 的 3× DPR | `web/public/wucora-logo-192.webp` | 192×192 | 15,750 | 98.529% |
+| 独立浏览器图标 | `web/public/wucora-favicon.ico` | 16、32、48 | 5,123 | 99.522% |
+| 旧配置和直接链接的兼容入口 | `web/public/wucora-logo.png` | 192×192 | 24,457 | 97.716% |
+
+- 发布基线原图为 1254×1254、1,070,741 字节的 RGB PNG，没有透明通道；保留原白底、方形留白、颜色和比例，不抠图、裁切或重绘。采用 Lanczos3 缩放后无损编码；完整原图及 SHA256 随审阅证据保留。
+- `SITE_BRAND` 的前端默认图改用 128px WebP；Rsbuild 与 `applySystemBrandingToDom` 使用独立 ICO。`resolveBrandLogo` 仅将同源的旧默认路径（含查询参数）和新资源路径按用途归一，外部同名文件仍视作管理员自定义图；后端默认 `common.Logo` 及已保存设置无需迁移。
+- 继续复用 `SystemBrand`，兼容扩展已有 `HeaderLogo` 供首页和页脚组合；固定显示框和 CSS 尺寸保持。失败时只对当前图片或 favicon 回退，不覆盖管理员配置，也不无限重试默认资源。`useSystemConfig` 预加载显示图，不再由图片完成事件覆盖 favicon；缓存初始化、网络刷新和配置订阅仍由现有入口统一更新。
+- 在既有 `status-query.test.tsx` 补充默认 favicon、持久化旧配置、网络自定义更新、清除及加载失败回退的行为回归；生产构建的真实网关截图、DPR、MIME/缓存和 Network 传输证据随独立 PR 交付。未修改认证业务、权限、路由、接口、数据库或上游归属；原 55 项工作副本继续逐路径/哈希保护。
+
+## PR #19：固定对象与审阅边界（历史记录）
 
 - Fork 起点：`3d30c673ddc3d70b43fdb176e5ee9b552e59893d`（PR #18 已合并）；前次上游 `669d774976369e986f03b6e24fff1042f6f94832`，本轮固定上游 **`a1d1fb0cca76d3a1a7f3a1995d09abd1e9804c73`**。不追加实施中的新上游批次。
 - 上游三个提交：`3546e9382` 为 GPT-6.2 Astra/Sol 的 Chat 参数兼容，`58f786fbf` 说明 Midjourney 图像公开访问的既有行为，`a1d1fb0cc` 说明 root 发布站点内容的安全报告边界。后两项仅为安全政策说明，不是新增匿名访问或放宽 HTML/权限控制。
@@ -85,7 +101,7 @@
 
 | 目的 | 具体路径 | 相对固定上游的实际差异 | 回归证据 | 后续决策 |
 | --- | --- | --- | --- | --- |
-| WuCora 品牌及明暗主题 | `web/src/styles/{theme,theme-presets,cloud,home,index}.css`，`web/src/context/theme-provider.tsx`，`web/public/wucora-logo.png`，`web/src/components/layout/components/system-brand.tsx` | 品牌变量、字体、资源与主题组合；保留上游主题预设、密度和圆角设置 | `web/src/styles/__tests__/`、主题上下文测试、三宽度两主题截图 | **保留**品牌值与资源；**适配**上游主题能力，避免为每个业务页面复制颜色 |
+| WuCora 品牌及明暗主题 | `web/src/styles/{theme,theme-presets,cloud,home,index}.css`，`web/src/context/theme-provider.tsx`，`web/public/wucora-{logo*,favicon.ico}`，`web/src/lib/{site-branding,dom-utils}.ts`，共享 `SystemBrand`/`HeaderLogo` | 品牌变量、字体、资源与主题组合；按显示尺寸选择无损 WebP 和独立 ICO，旧 PNG 保留小型兼容入口；保留上游主题预设、密度和圆角设置 | 品牌状态/缓存及失败回退测试、主题上下文测试、真实网关多宽度/主题/DPR截图与资源传输记录 | **保留**品牌图案、比例与自定义配置语义；**适配**上游主题能力，避免大图充当 favicon 或重复品牌实现 |
 | 站点品牌与项目身份分开 | `common/constants.go`，`controller/misc.go`，`web/src/lib/{build-version,build-metadata,status-query}.ts`，`web/src/stores/system-config-store.ts` | 可配置站点默认品牌、真实源码版本/更新来源；`UpstreamSystemName` 与原作者许可身份继续保留 | `controller/misc_branding_test.go`、版本/状态缓存测试、镜像 source revision 与实际资产核对 | **保留**真实 fork 来源；上游具备等价来源/缓存能力时**适配或替代**，不能删除依法必要的归属 |
 
 ## 二、页面布局与共享组件

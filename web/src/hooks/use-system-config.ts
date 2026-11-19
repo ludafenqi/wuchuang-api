@@ -19,8 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useCallback } from 'react'
 
-import { DEFAULT_LOGO } from '@/lib/constants'
+import { DEFAULT_LOGO, SITE_BRAND } from '@/lib/constants'
 import { applyFaviconToDom } from '@/lib/dom-utils'
+import { resolveBrandLogo } from '@/lib/site-branding'
 import { ensureStatus } from '@/lib/status-query'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
@@ -62,6 +63,7 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
   const queryClient = useQueryClient()
   const { config, loading, loadedLogoUrl, setLoadedLogoUrl, setLoading } =
     useSystemConfigStore()
+  const logo = resolveBrandLogo(config.logo)
 
   // Load config from backend via the shared `/api/status` cache.
   // `ensureStatus` writes the mapped config into this store itself, so there is
@@ -82,10 +84,9 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
     if (autoLoad) loadConfig()
   }, [autoLoad, loadConfig])
 
-  // Preload logo image when URL changes
+  // Preload the displayed image. main.tsx owns favicon updates from config;
+  // image completion must never replace the independent default favicon.
   useEffect(() => {
-    const { logo } = config
-
     // Skip if logo is already loaded
     if (!logo || logo === loadedLogoUrl) return
 
@@ -94,23 +95,28 @@ export function useSystemConfig(options: UseSystemConfigOptions = {}) {
       logo,
       () => {
         setLoadedLogoUrl(logo)
-        applyFaviconToDom(logo)
       },
       () => {
-        if (logo !== DEFAULT_LOGO) {
+        if (logo !== DEFAULT_LOGO && logo !== SITE_BRAND.logo) {
           // eslint-disable-next-line no-console
           console.error('Failed to load logo:', logo)
+          if (
+            resolveBrandLogo(useSystemConfigStore.getState().config.logo) ===
+            logo
+          ) {
+            applyFaviconToDom('')
+          }
         }
         // Mark as loaded even on error to prevent infinite retry
         setLoadedLogoUrl(logo)
       }
     )
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.logo, loadedLogoUrl, setLoadedLogoUrl])
+  }, [logo, loadedLogoUrl, setLoadedLogoUrl])
 
   return {
     ...config,
+    logo,
     loading,
-    logoLoaded: config.logo === loadedLogoUrl && !!loadedLogoUrl,
+    logoLoaded: logo === loadedLogoUrl && !!loadedLogoUrl,
   }
 }

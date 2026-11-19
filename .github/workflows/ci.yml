@@ -258,13 +258,30 @@ jobs:
           UI_BROWSER: /opt/google/chrome/chrome
         run: |
           set -euo pipefail
-          go build -o "$RUNNER_TEMP/wucora-review-gateway" .
+          go build -ldflags "-X github.com/QuantumNous/new-api/common.SourceRevision=$(git rev-parse HEAD)" -o "$RUNNER_TEMP/wucora-review-gateway" .
           cd web
           # Ubuntu's packaged Chrome has the AppArmor user-namespace allowance.
           # Keep chromiumSandbox enabled; never change runner-wide restrictions.
           "$UI_BROWSER" --version
           bun x playwright install-deps chromium
           UI_GATEWAY="$RUNNER_TEMP/wucora-review-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-review" bun scripts/wucora-browser.mjs
+
+      - name: Verify embedded brand resources and independent favicon
+        env:
+          UI_BROWSER: /opt/google/chrome/chrome
+        run: |
+          UI_GATEWAY="$RUNNER_TEMP/wucora-review-gateway" UI_REPORT_DIR="$RUNNER_TEMP/wucora-brand-review" bun scripts/wucora-brand-browser.mjs
+
+      - name: Preserve brand resource screenshots and network evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-brand-resources-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/wucora-brand-review/*.png
+            ${{ runner.temp }}/wucora-brand-review/result.json
+            ${{ runner.temp }}/wucora-brand-review/cleanup.json
+          if-no-files-found: warn
 
       - name: Preserve UI review evidence
         if: always()

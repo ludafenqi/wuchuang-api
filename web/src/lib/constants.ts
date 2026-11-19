@@ -28,7 +28,9 @@ export const DEFAULT_LOGO = '/logo.png'
 // SystemName and Logo settings continue to take precedence over these defaults.
 export const SITE_BRAND = {
   name: 'WuCora',
-  logo: '/wucora-logo.png',
+  logo: '/wucora-logo-128.webp',
+  decorationLogo: '/wucora-logo-192.webp',
+  favicon: '/wucora-favicon.ico',
 } as const
 
 // LocalStorage Keys

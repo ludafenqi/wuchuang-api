@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { SITE_BRAND } from '@/lib/constants'
+import { resolveBrandLogo } from '@/lib/site-branding'
 import type { SystemConfig } from '@/stores/system-config-store'
 
 export function applySystemBrandingToDom(
@@ -30,15 +32,30 @@ export function applySystemBrandingToDom(
 }
 
 export function applyFaviconToDom(url: string) {
-  if (typeof document === 'undefined' || !url) return
+  if (typeof document === 'undefined') return
+  const logo = resolveBrandLogo(url)
+  const favicon = logo === SITE_BRAND.logo ? SITE_BRAND.favicon : logo
   try {
-    const next = new URL(url, window.location.href).href
+    const next = new URL(favicon, window.location.href).href
     const existing =
       document.querySelectorAll<HTMLLinkElement>('link[rel~="icon"]')
     if (existing.length === 1 && existing[0].href === next) return
     const link = document.createElement('link')
     link.rel = 'icon'
-    link.href = url
+    link.href = favicon
+    if (favicon === SITE_BRAND.favicon) {
+      link.type = 'image/x-icon'
+      link.setAttribute('sizes', '16x16 32x32 48x48')
+    }
+    link.addEventListener(
+      'error',
+      () => {
+        if (link.isConnected && favicon !== SITE_BRAND.favicon) {
+          applyFaviconToDom('')
+        }
+      },
+      { once: true }
+    )
     existing.forEach((l) => l.remove())
     document.head.appendChild(link)
   } catch {

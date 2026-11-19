@@ -30,6 +30,8 @@ import { getBuildVersion } from '@/lib/build-version'
 import { DEFAULT_SYSTEM_NAME } from '@/lib/constants'
 import { cn } from '@/lib/utils'
 
+import { HeaderLogo } from './header-logo'
+
 type SystemBrandProps = {
   defaultName?: string
   defaultVersion?: string
@@ -70,7 +72,7 @@ export function SystemBrand(props: SystemBrandProps) {
         )}
       >
         <div className='flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-lg'>
-          <img
+          <HeaderLogo
             src={logo}
             alt={t('Logo')}
             className='size-full rounded-lg object-contain'
@@ -91,7 +93,7 @@ export function SystemBrand(props: SystemBrandProps) {
           render={<Link to='/' aria-label={t('Go to home')} />}
         >
           <div className='flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg'>
-            <img
+            <HeaderLogo
               src={logo}
               alt={t('Logo')}
               className='size-full rounded-lg object-contain'
