@@ -503,11 +503,48 @@ try {
       .click()
     await checkIcon(page, expectedIcon)
     await ready(page)
-    await page.waitForFunction(() =>
-      [...document.images]
-        .filter((x) => x.getAttribute('src') === '/wucora-logo-128.webp')
-        .some((x) => x.complete && x.naturalWidth === 128)
-    )
+    try {
+      await page.waitForFunction(() => {
+        const images = [...document.images].filter((image) => {
+          const box = image.getBoundingClientRect()
+          return (
+            /wucora-logo|missing-brand/.test(image.src) &&
+            box.width > 0 &&
+            box.height > 0 &&
+            getComputedStyle(image).visibility !== 'hidden'
+          )
+        })
+        return (
+          images.length > 0 &&
+          images.every(
+            (image) =>
+              image.complete &&
+              image.naturalWidth === 128 &&
+              new URL(image.currentSrc).pathname === '/wucora-logo-128.webp'
+          )
+        )
+      })
+    } catch (error) {
+      fs.writeFileSync(
+        path.join(output, 'result.json'),
+        JSON.stringify(
+          {
+            sourceSHA: sha,
+            harnessSHA,
+            failedStage: 'all-visible-custom-fallback-images-decoded',
+            images: await imageInfo(page),
+            network,
+          },
+          null,
+          2
+        )
+      )
+      await page.screenshot({
+        path: path.join(output, 'custom-failure-wait.png'),
+        fullPage: true,
+      })
+      throw error
+    }
     const options = await admin.request
       .get(`${origin}/api/option/`, { headers })
       .then((r) => r.json())
