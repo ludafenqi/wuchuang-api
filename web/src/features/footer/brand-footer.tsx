@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { HtmlContent } from '@/components/html-content'
+import { HeaderLogo } from '@/components/layout/components/header-logo'
 import { cn } from '@/lib/utils'
 
 import {
@@ -130,9 +131,10 @@ export function BrandFooter(props: BrandFooterProps) {
                   to='/'
                   className='inline-flex max-w-full items-center gap-3'
                 >
-                  <img
+                  <HeaderLogo
                     src={logo}
                     alt=''
+                    variant='decoration'
                     className='size-10 shrink-0 rounded-xl object-contain'
                   />
                   <span className='text-lg font-semibold break-words'>

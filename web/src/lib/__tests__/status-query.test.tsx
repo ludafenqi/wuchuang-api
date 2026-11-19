@@ -17,11 +17,21 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { cleanup, renderHook, waitFor } from '@testing-library/react'
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { afterEach, beforeEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
+import { HeaderLogo } from '@/components/layout/components/header-logo'
 import { useStatus } from '@/hooks/use-status'
+import { useSystemConfig } from '@/hooks/use-system-config'
 import { api } from '@/lib/api'
 import { applySystemBrandingToDom } from '@/lib/dom-utils'
 import {
@@ -85,6 +95,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  vi.unstubAllGlobals()
+  document
+    .querySelectorAll('link[rel~="icon"]')
+    .forEach((link) => link.remove())
   queryClients.splice(0).forEach((client) => client.clear())
   apiClient.get = originalGet
   window.localStorage.clear()
@@ -97,7 +111,7 @@ describe('site branding configuration', () => {
     expect(document.title).toBe('WuCora')
     expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
       'href',
-      '/wucora-logo.png'
+      '/wucora-favicon.ico'
     )
     applySystemBrandingToDom({ systemName: 'Custom site', logo: '/custom.png' })
     expect(document.title).toBe('Custom site')
@@ -116,7 +130,7 @@ describe('site branding configuration', () => {
     (status) => {
       expect(mapStatusDataToConfig(status)).toMatchObject({
         systemName: 'WuCora',
-        logo: '/wucora-logo.png',
+        logo: '/wucora-logo-128.webp',
       })
     }
   )
@@ -124,7 +138,7 @@ describe('site branding configuration', () => {
   test('initializes the site brand before status is fetched', () => {
     expect(useSystemConfigStore.getState().config).toMatchObject({
       systemName: 'WuCora',
-      logo: '/wucora-logo.png',
+      logo: '/wucora-logo-128.webp',
     })
   })
 
@@ -144,6 +158,145 @@ describe('site branding configuration', () => {
       })
     }
   )
+  test.each([
+    '/wucora-logo.png',
+    '/wucora-logo.png?revision=old',
+    '/wucora-logo-128.webp',
+    '/wucora-logo-192.webp',
+    new URL('/wucora-logo.png', window.location.href).href,
+    '',
+  ])(
+    'keeps the small default favicon for the bundled logo alias %s',
+    (logo) => {
+      applySystemBrandingToDom({ systemName: 'WuCora', logo })
+      const icon = document.querySelector('link[rel="icon"]')
+      expect(icon).toHaveAttribute('href', '/wucora-favicon.ico')
+      applySystemBrandingToDom({
+        systemName: 'WuCora',
+        logo: '/wucora-logo.png',
+      })
+      expect(document.querySelector('link[rel="icon"]')).toBe(icon)
+    }
+  )
+
+  test('preserves an external custom logo even when its basename matches the old default', () => {
+    const logo = 'https://custom.example/wucora-logo.png?v=2'
+    applySystemBrandingToDom({ systemName: 'Custom', logo })
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      logo
+    )
+    applySystemBrandingToDom({ systemName: 'Custom', logo: '' })
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/wucora-favicon.ico'
+    )
+    expect(document.title).toBe('Custom')
+  })
+
+  test('falls back to the small favicon after a custom icon fails without changing the configured logo', () => {
+    useSystemConfigStore.getState().setConfig({ logo: '/missing-custom.png' })
+    applySystemBrandingToDom(useSystemConfigStore.getState().config)
+    const icon = document.querySelector('link[rel="icon"]')
+    if (!icon) throw new Error('Configured favicon missing')
+    fireEvent.error(icon)
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/wucora-favicon.ico'
+    )
+    expect(useSystemConfigStore.getState().config.logo).toBe(
+      '/missing-custom.png'
+    )
+  })
+
+  test('loads the compact image from persisted legacy branding, accepts a network custom logo, and falls back after clearing it', async () => {
+    const images: HTMLImageElement[] = []
+    vi.stubGlobal(
+      'Image',
+      vi.fn(function () {
+        const image = document.createElement('img')
+        images.push(image)
+        return image
+      })
+    )
+    localStorage.setItem(
+      'system-config-storage',
+      JSON.stringify({
+        state: {
+          config: {
+            ...useSystemConfigStore.getInitialState().config,
+            logo: '/wucora-logo.png',
+          },
+          loadedLogoUrl: '/wucora-logo.png',
+        },
+        version: 0,
+      })
+    )
+    await useSystemConfigStore.persist.rehydrate()
+    const client = createQueryClient()
+    const hook = renderHook(() => useSystemConfig(), {
+      wrapper: wrapper(client),
+    })
+    expect(hook.result.current.logo).toBe('/wucora-logo-128.webp')
+    expect(images.at(-1)).toHaveAttribute('src', '/wucora-logo-128.webp')
+    const defaultImage = images.at(-1)
+    if (!defaultImage) throw new Error('Default logo preload missing')
+    act(() => fireEvent.load(defaultImage))
+    expect(hook.result.current.logoLoaded).toBe(true)
+
+    apiClient.get = async () => ({
+      data: {
+        success: true,
+        data: { system_name: 'Custom', logo: '/custom.png' },
+      },
+    })
+    await act(async () => {
+      await ensureStatus(client)
+    })
+    expect(hook.result.current.logo).toBe('/custom.png')
+    expect(images.at(-1)).toHaveAttribute('src', '/custom.png')
+    applySystemBrandingToDom(useSystemConfigStore.getState().config)
+    const customImage = images.at(-1)
+    if (!customImage) throw new Error('Custom logo preload missing')
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    act(() => fireEvent.error(customImage))
+    expect(hook.result.current.logoLoaded).toBe(true)
+    expect(document.querySelector('link[rel="icon"]')).toHaveAttribute(
+      'href',
+      '/wucora-favicon.ico'
+    )
+
+    apiClient.get = async () => ({
+      data: { success: true, data: { system_name: 'Custom', logo: '' } },
+    })
+    await act(async () => {
+      await client.invalidateQueries({ queryKey: STATUS_QUERY_KEY })
+      await client.fetchQuery(statusQueryOptions)
+    })
+    expect(hook.result.current.logo).toBe('/wucora-logo-128.webp')
+    expect(images.at(-1)).toHaveAttribute('src', '/wucora-logo-128.webp')
+  })
+
+  test('keeps a failed custom brand image in its reserved box and leaves the admin setting intact', () => {
+    useSystemConfigStore.getState().setConfig({ logo: '/missing-custom.png' })
+    render(
+      <HeaderLogo
+        src='/missing-custom.png'
+        alt='Configured brand'
+        loading={false}
+        logoLoaded
+      />
+    )
+    const logo = screen.getByRole('img', { name: 'Configured brand' })
+    expect(logo).toHaveAttribute('src', '/missing-custom.png')
+    fireEvent.error(logo)
+    expect(logo).toHaveAttribute('src', '/wucora-logo-128.webp')
+    fireEvent.error(logo)
+    expect(logo).toHaveAttribute('src', '/wucora-logo-128.webp')
+    expect(useSystemConfigStore.getState().config.logo).toBe(
+      '/missing-custom.png'
+    )
+  })
 })
 
 describe('shared status query deduplication', () => {
