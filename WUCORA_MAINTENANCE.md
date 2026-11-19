@@ -142,6 +142,8 @@ PR #18 的五项上游更新按原实现接入，其中缓存类别仅展示、�
 
 ## 五、同步、验证与发布门禁
 
+正式发布完成验证后维护固定拉取地址 `ghcr.io/ludafenqi/wuchuang-api:stable`，同时保留完整 SHA 标签及 digest。发布互斥覆盖构建和 stable 推进，推进前再次核对 main 和最新发布运行，并校验已拉取镜像的 revision、运行服务、资源和许可。测试分支只发布独立测试标签。部署脚本先把标签解析为 digest，记录本次内容后重建服务，使用方法见 [部署说明](docs/WUCHUANG-ACTIONS-DEPLOY.md)。
+
 | 机制 | 实际实现与必须保留的保护 | 回归/证据 |
 | --- | --- | --- |
 | 候选提交前规范化 | `.github/scripts/prepare-upstream-candidate.mjs` 调用 `normalizeLocales`；严格解析全部顶层 locale（含新增语言），拒绝重复/转义别名键；i18n:sync 后键和值完全相同才暂存并提交；失败恢复原文件并 merge --abort | PR #15 已引入；真实临时 Git 回归覆盖无冲突转义规范化、所有语言、幂等、重复输入/输出、新语言语义变化和中断。当前三个脚本 26 项回归通过，无需重复修复 |
