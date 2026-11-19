@@ -136,6 +136,8 @@ server.on('request', (req, res) => {
       '.css': 'text/css',
       '.svg': 'image/svg+xml',
       '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.ico': 'image/x-icon',
       '.woff2': 'font/woff2',
     }[path.extname(file)] || 'application/octet-stream'
   )
