@@ -32,7 +32,7 @@ const sha = process.env.PRODUCT_SHA
 assert.match(sha, /^[0-9a-f]{40}$/)
 assert.match(harnessSHA, /^[0-9a-f]{40}$/)
 assert.notEqual(sha, harnessSHA)
-const origin = process.env.CONTAINER_ORIGIN
+const origin = process.env.BRAND_CONTAINER_ORIGIN
 assert.match(origin, /^http:\/\/172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+:3000$/)
 const fixtureHost = process.env.BRAND_FIXTURE_HOST
 assert.match(fixtureHost, /^172\.(?:1[6-9]|2\d|3[01])\.\d+\.\d+$/)
@@ -72,8 +72,8 @@ const expectedDecoration =
 const expectedIcon =
   mode === 'after' ? '/wucora-favicon.ico' : '/wucora-logo.png'
 const credentials = {
-  username: 'uiregression',
-  password: 'Disposable-UI-Only-2026!',
+  username: 'brandreview',
+  password: 'Disposable-Brand-Only-2026!',
 }
 const results = [],
   network = [],
@@ -239,7 +239,18 @@ async function capture(page, name, scenario) {
 }
 try {
   await waitReady()
-  // The preceding core container checks initialized this disposable database.
+  // Initialize only the independent disposable branding container.
+  const setup = await fetch(origin + '/api/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      ...credentials,
+      confirmPassword: credentials.password,
+      SelfUseModeEnabled: false,
+      DemoSiteEnabled: false,
+    }),
+  }).then((r) => r.json())
+  assert.equal(setup.success, true)
   browser = await chromium.launch({
     headless: true,
     chromiumSandbox: true,
