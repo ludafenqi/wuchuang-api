@@ -122,3 +122,76 @@ jobs:
           retention-days: 14
           compression-level: 0
           if-no-files-found: error
+
+  deploy:
+    if: github.repository == 'ludafenqi/wuchuang-api' && github.ref == 'refs/heads/codex/wucora-ghcr-verify-stable-20261119'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_DIR: ${{ runner.temp }}/stable-deploy
+      COMPOSE_PROJECT_NAME: wucora-stable-${{ github.run_id }}
+      HEALTH_URL: http://127.0.0.1:39933/api/status
+      BACKUP_CONFIRMED: 'YES'
+    steps:
+      - name: Checkout the exact released deployment script
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: 1a8604f751cab76c8e2de6918c3e5a4905fce252
+          persist-credentials: false
+      - name: Exercise stable resolution and rollback on disposable Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$BASE_DIR"
+          docker version
+          cat > "$BASE_DIR/compose.yml" <<'YAML'
+          services:
+            new-api:
+              image: ghcr.io/ludafenqi/wuchuang-api@sha256:eeb5e0124820af2de2a3393b0e42b4dbdaea21d9c260714139974cb57fb23bf7
+              ports: ['127.0.0.1:39933:3000']
+              tmpfs: ['/data']
+              environment:
+                UPDATE_TASK: 'false'
+                SESSION_SECRET: disposable-compose-review-only
+                SQL_DSN: ''
+                LOG_SQL_DSN: ''
+                REDIS_CONN_STRING: ''
+          YAML
+          docker compose -f "$BASE_DIR/compose.yml" up -d
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$HEALTH_URL" > /dev/null; then break; fi
+            sleep 1
+          done
+          curl -fsS "$HEALTH_URL"
+          expected='sha256:f0813eeb7858066fff5689355c1fbb4de1794fedc5cbd1f04c5bd49eb508bfa1'
+          test "$(docker buildx imagetools inspect ghcr.io/ludafenqi/wuchuang-api:stable --format '{{.Manifest.Digest}}')" = "$expected"
+          bash scripts/wuchuang-deploy.sh deploy ghcr.io/ludafenqi/wuchuang-api:stable
+          test "$(cat "$BASE_DIR/.wuchuang-release/current-image.txt")" = "ghcr.io/ludafenqi/wuchuang-api@$expected"
+          test "$(cat "$BASE_DIR/.wuchuang-release/requested-image.txt")" = ghcr.io/ludafenqi/wuchuang-api:stable
+          curl -fsS "$HEALTH_URL" > "$RUNNER_TEMP/deployed-status.json"
+          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/deployed-status.json")); assert d["data"]["source_revision"]=="1a8604f751cab76c8e2de6918c3e5a4905fce252"'
+          bash scripts/wuchuang-deploy.sh rollback
+          for attempt in $(seq 1 60); do
+            if curl -fsS "$HEALTH_URL" > "$RUNNER_TEMP/rollback-status.json"; then break; fi
+            sleep 1
+          done
+          python3 -c 'import json,os; d=json.load(open(os.environ["RUNNER_TEMP"]+"/rollback-status.json")); assert d["data"]["source_revision"]=="73e91b01a77d12994027b33302411d18cb33f18f"'
+          cp "$BASE_DIR/.wuchuang-release/current-image.txt" "$RUNNER_TEMP/current-image.txt"
+          cp "$BASE_DIR/.wuchuang-release/requested-image.txt" "$RUNNER_TEMP/requested-image.txt"
+      - name: Remove the disposable Compose containers and network
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "$BASE_DIR/compose.yml" ]; then
+            docker compose -f "$BASE_DIR/compose.yml" down --volumes --remove-orphans
+          fi
+      - name: Save isolated deployment evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: stable-compose-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/deployed-status.json
+            ${{ runner.temp }}/rollback-status.json
+            ${{ runner.temp }}/current-image.txt
+            ${{ runner.temp }}/requested-image.txt
