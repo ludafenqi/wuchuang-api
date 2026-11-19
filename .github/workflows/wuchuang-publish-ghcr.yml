@@ -60,6 +60,9 @@ jobs:
             exit 1
           fi
 
+      - name: Verify stable promotion and deployment behavior
+        run: python3 .github/scripts/stable-release.test.py
+
       - name: Set up Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
@@ -147,6 +150,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: true
+
+      - name: Verify published digest and advance stable
+        env:
+          DIGEST: ${{ steps.image_build.outputs.digest }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/promote-stable.py
+
+      - name: Save stable release evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: wucora-stable-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/stable-release/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Display release image (pin by digest)
         env:

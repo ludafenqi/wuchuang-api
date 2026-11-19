@@ -59,11 +59,19 @@ git push -u origin chore/wuchuang-actions
 2. 点击 `Run workflow`，**只选择 `main`**。
 3. 任务会重新运行 Go/Bun 测试，之后使用仓库 Dockerfile 构建 `linux/amd64` 镜像并推送：
    `ghcr.io/ludafenqi/wuchuang-api:sha-<完整 40 位提交 SHA>`。
-4. 工作流完成后，在任务的 `Summary` 中复制 `ghcr.io/ludafenqi/wuchuang-api@sha256:...`。**正式部署推荐用 digest**，保证镜像版本准确。
+4. 工作流按 digest 拉取并验证架构、源码 revision、服务状态、内嵌资源与许可，通过后将 `ghcr.io/ludafenqi/wuchuang-api:stable` 指向同一 OCI 索引。过期 main 或较早的发布运行无法推进 stable。完整 SHA 标签与 digest 同时保留，任务 Summary 和 `wucora-stable-*` 工件记录实际版本。
 5. 第一次发布后，到 GitHub 个人账户的 `Packages` 中找到 `wuchuang-api`，根据需要将其设置为 Public。GHCR 包可能默认是 Private；如果 Private，VPS 拉取镜像之前需要单独授权 `read:packages` 并执行 `docker login ghcr.io -u ludafenqi`（不要把令牌直接写在命令历史里）。
 6. 目前发布配置默认 `linux/amd64`；VPS 执行 `uname -m` 应为 `x86_64`。如果 VPS 为 `aarch64`，先修改发布工作流支持 `linux/arm64`，否则不可直接部署。
 
 构建成功**不会**自动修改服务器。
+
+日后可统一使用固定拉取地址：
+
+```bash
+docker pull ghcr.io/ludafenqi/wuchuang-api:stable
+```
+
+`stable` 固定标签名称，每次通过验证的 main 正式发布会更新其镜像内容。已运行容器仍需显式拉取和重建才能升级。SHA 标签和 digest 可用于固定版本、审计和回退。网页展示与 `source_revision` 继续对应实际构建提交。
 
 ## 六、VPS 第一次部署准备（只操作现有 New API，不操作 Sub2API）
 
@@ -93,21 +101,24 @@ bash -n /usr/local/sbin/wuchuang-deploy
 
 先阅读这个脚本，再执行发布。推荐日后固定下载经过审核的 Git 提交版本，避免脚本自身发生未审核变化。
 
-部署第一版（把 `<DIGEST>` 替换为 GHCR Summary 中的真实 `sha256` 值）：
+使用固定 stable 地址手动升级：
 
 ```bash
 # 仅在数据库备份已经确认且可用后设置 BACKUP_CONFIRMED=YES。
 BACKUP_CONFIRMED=YES /usr/local/sbin/wuchuang-deploy deploy \
-  'ghcr.io/ludafenqi/wuchuang-api@sha256:<DIGEST>'
+  'ghcr.io/ludafenqi/wuchuang-api:stable'
 ```
 
 脚本会自动：
 
 - 为当前容器镜像建立本地备份标签，例如 `wuchuang-new-api:rollback-20261021000000`；
-- 拉取指定的新镜像；
+- 将 stable 或完整 SHA 标签解析为本次准确 digest，随后按 digest 拉取和重建；解析失败时终止；
+- 将解析结果保存到 `.wuchuang-release/current-image.txt`，原输入保存到 `requested-image.txt`；部署期间 stable 的后续变化不会改变本次选择；
 - 在原有项目文件夹生成 `compose.wuchuang-image.yml` 叠加文件，**不覆盖**原 Compose 配置；
 - 只重建 `new-api` 一个服务，不运行 `down`，不删除数据库、卷或 Sub2API；
 - 使用 `https://wcai.113901.xyz/api/status` 检查健康状态，失败尝试恢复旧镜像。
+
+解析标签需要 Docker Buildx。也可将命令中的 stable 地址替换为 Summary 中的 `ghcr.io/ludafenqi/wuchuang-api@sha256:<DIGEST>`，直接部署指定内容。回退指定旧版时使用旧 digest，或使用下节已保存的本地回滚镜像。
 
 **特别注意：** 后续如果直接运行原来的 `docker compose up -d` 而不附带 `-f compose.wuchuang-image.yml`，原始 Compose 的 `image` 设置可能又恢复官方镜像。建议以后通过该脚本发布，或每次使用**两个** Compose 文件；不要把它当成自动生效的标准 `compose.override.yml`。
 
