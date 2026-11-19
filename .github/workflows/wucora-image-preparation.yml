@@ -128,7 +128,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      BASE_DIR: ${{ runner.temp }}/stable-deploy
       COMPOSE_PROJECT_NAME: wucora-stable-${{ github.run_id }}
       HEALTH_URL: http://127.0.0.1:39933/api/status
       BACKUP_CONFIRMED: 'YES'
@@ -138,6 +137,8 @@ jobs:
         with:
           ref: 1a8604f751cab76c8e2de6918c3e5a4905fce252
           persist-credentials: false
+      - name: Set the isolated Compose directory
+        run: echo "BASE_DIR=$RUNNER_TEMP/stable-deploy" >> "$GITHUB_ENV"
       - name: Exercise stable resolution and rollback on disposable Compose
         shell: bash
         run: |
