@@ -136,7 +136,7 @@ jobs:
           TEST_AUTH_REDIS_ADDR: '127.0.0.1:6379'
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
-        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix|UnfinishedTaskQueriesDatabaseMatrix)$' -count=1 -v
 
       - name: Verify batch channel tag atomicity on three real databases
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
@@ -152,6 +152,10 @@ jobs:
       - name: Verify auth cache operations on a real six-node Redis Cluster
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
         run: bash .github/scripts/verify-redis-cluster.sh
+
+      - name: Verify shared image encoder capacity under the race detector
+        if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'
+        run: go test -race ./relay/requestplugin -run '^TestMediaReencode' -count=1 -timeout=180s
 
       - name: Verify Vertex token caching under the race detector
         if: github.event_name == 'pull_request' || steps.prepare.outputs.changed == 'true'

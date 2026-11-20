@@ -117,7 +117,7 @@ jobs:
           FOOTER_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
           PRICING_TEST_MYSQL_DSN: 'root:disposable-review-only@tcp(127.0.0.1:3306)/review?parseTime=true'
           PRICING_TEST_POSTGRES_DSN: 'host=127.0.0.1 port=5432 user=postgres password=disposable-review-only dbname=review sslmode=disable'
-        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix)$' -count=1 -v
+        run: go test ./model -run 'TestFooter|^Test(AuthCacheIntegrityDatabaseMatrix|ModelPricingIssuesDatabaseMatrix|UnfinishedTaskQueriesDatabaseMatrix)$' -count=1 -v
 
       - name: Verify batch channel tag atomicity on three real databases
         env:
@@ -178,6 +178,9 @@ jobs:
 
       - name: Verify stream concurrency under the race detector
         run: go test -race ./controller ./relay/helper ./relay/channel/openai -run '^Test(RealtimeReadersPropagateFailureAndJoin|RealtimePanicPreservesActualAccounting|StreamScannerPanicSafety|StreamScannerPanicIO|KeepAlivePanicStopsUpstream|KeepAlivePanicCancelsInflightRequest)$' -count=1 -timeout=180s
+
+      - name: Verify shared image encoder capacity under the race detector
+        run: go test -race ./relay/requestplugin -run '^TestMediaReencode' -count=1 -timeout=180s
 
       - name: Verify Vertex token caching under the race detector
         run: go test -race ./relay/channel/vertex -run '^TestGetAccessToken|^TestExchangeJwt' -count=1 -timeout=120s
