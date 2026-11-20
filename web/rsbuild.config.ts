@@ -91,7 +91,7 @@ export default defineConfig(({ envMode }) => {
     html: {
       title: SITE_BRAND.name,
       template: './index.html',
-      favicon: './public/wucora-logo.png',
+      favicon: './public/wucora-favicon.ico',
     },
     server: {
       host: '0.0.0.0',

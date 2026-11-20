@@ -16,13 +16,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { resolveBrandLogo, type BrandLogoVariant } from '@/lib/site-branding'
 import { cn } from '@/lib/utils'
 
 interface HeaderLogoProps {
   src: string
   alt?: string
-  loading: boolean
-  logoLoaded: boolean
+  loading?: boolean
+  logoLoaded?: boolean
+  variant?: BrandLogoVariant
   className?: string
 }
 
@@ -33,14 +35,21 @@ interface HeaderLogoProps {
 export function HeaderLogo({
   src,
   alt = 'logo',
-  loading,
-  logoLoaded,
+  loading = false,
+  logoLoaded = true,
+  variant = 'compact',
   className,
 }: HeaderLogoProps) {
   return (
     <img
-      src={src}
+      src={resolveBrandLogo(src, variant)}
       alt={alt}
+      onError={(event) => {
+        const fallback = resolveBrandLogo('', variant)
+        if (event.currentTarget.getAttribute('src') !== fallback) {
+          event.currentTarget.src = fallback
+        }
+      }}
       className={cn(
         'h-6 w-6 rounded-full transition-opacity duration-200',
         !loading && logoLoaded ? 'opacity-100' : 'opacity-0',

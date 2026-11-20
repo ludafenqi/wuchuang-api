@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Manually deploy a reviewed GHCR image to the existing New API Compose service.
 # Examples:
+#   BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh deploy ghcr.io/ludafenqi/wuchuang-api:stable
 #   BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh deploy ghcr.io/ludafenqi/wuchuang-api@sha256:...
 #   BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh rollback
 set -Eeuo pipefail
@@ -52,10 +53,18 @@ check_health() {
 case "$ACTION" in
   deploy)
     IMAGE="${2:-}"
-    case "$IMAGE" in
-      ghcr.io/ludafenqi/wuchuang-api@sha256:*|ghcr.io/ludafenqi/wuchuang-api:sha-*) ;;
-      *) err 'Supply the GHCR digest or sha-commit tag from your manual GitHub Actions run';;
-    esac
+    REQUESTED_IMAGE="$IMAGE"
+    if [[ "$IMAGE" =~ ^ghcr\.io/ludafenqi/wuchuang-api@sha256:[0-9a-f]{64}$ ]]; then
+      : # Already pinned.
+    elif [[ "$IMAGE" == ghcr.io/ludafenqi/wuchuang-api:stable || "$IMAGE" =~ ^ghcr\.io/ludafenqi/wuchuang-api:sha-[0-9a-f]{40}$ ]]; then
+      DIGEST="$(docker buildx imagetools inspect "$IMAGE" --format '{{.Manifest.Digest}}')"
+      [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] || err 'The registry did not return a valid image digest'
+      IMAGE="ghcr.io/ludafenqi/wuchuang-api@$DIGEST"
+    else
+      err 'Supply the GHCR stable tag, full sha-commit tag or digest'
+    fi
+    docker pull "$IMAGE"
+    EXPECTED_IMAGE_ID="$(docker image inspect -f '{{.Id}}' "$IMAGE")"
     CURRENT_CID="$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE")"
     [ -n "$CURRENT_CID" ] || err "Current $SERVICE container not found; inspect Compose before deploying"
     OLD_IMAGE_ID="$(docker inspect -f '{{.Image}}' "$CURRENT_CID")"
@@ -63,13 +72,14 @@ case "$ACTION" in
     docker image tag "$OLD_IMAGE_ID" "$ROLLBACK_TAG"
     printf '%s\n' "$ROLLBACK_TAG" > "$STATE_DIR/previous-image.txt"
     printf 'Saved local rollback image: %s\n' "$ROLLBACK_TAG"
-    docker pull "$IMAGE"
     compose_with_image "$IMAGE" config --quiet
     compose_with_image "$IMAGE" up -d --no-deps "$SERVICE"
     NEW_CID="$(compose_with_image "$IMAGE" ps -q "$SERVICE")"
     [ -n "$NEW_CID" ] || err 'No container started after deployment'
-    if [ "$(docker inspect -f '{{.State.Running}}' "$NEW_CID")" = true ] && check_health; then
+    if [ "$(docker inspect -f '{{.Image}}' "$NEW_CID")" = "$EXPECTED_IMAGE_ID" ] &&
+       [ "$(docker inspect -f '{{.State.Running}}' "$NEW_CID")" = true ] && check_health; then
       printf '%s\n' "$IMAGE" > "$STATE_DIR/current-image.txt"
+      printf '%s\n' "$REQUESTED_IMAGE" > "$STATE_DIR/requested-image.txt"
       echo "OK. Deployed $IMAGE"
     else
       echo 'Health check failed. Attempting container-image rollback...' >&2
@@ -87,6 +97,7 @@ case "$ACTION" in
     ;;
   *)
     echo 'Usage:' >&2
+    echo '  BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh deploy ghcr.io/ludafenqi/wuchuang-api:stable' >&2
     echo '  BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh deploy ghcr.io/ludafenqi/wuchuang-api@sha256:...' >&2
     echo '  BACKUP_CONFIRMED=YES ./wuchuang-deploy.sh rollback' >&2
     exit 2

@@ -20,6 +20,7 @@ import { Link } from '@tanstack/react-router'
 import { ArrowDown, ArrowUpRight, Boxes, Code2, Network } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
+import { HeaderLogo } from '@/components/layout/components/header-logo'
 import { Button } from '@/components/ui/button'
 import { useSystemConfig } from '@/hooks/use-system-config'
 
@@ -72,7 +73,12 @@ export function LandingHero(props: {
             <div className='wucora-orbit wucora-orbit-outer' />
             <div className='wucora-orbit wucora-orbit-inner' />
             <div className='wucora-aperture-core'>
-              <img src={system.logo} alt='' />
+              <HeaderLogo
+                src={system.logo}
+                alt=''
+                variant='decoration'
+                className='rounded-none'
+              />
               <span>{system.systemName}</span>
             </div>
             <span className='wucora-orbit-node wucora-node-code'>
