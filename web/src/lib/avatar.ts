@@ -20,6 +20,8 @@ import type { CSSProperties } from 'react'
 
 export type UserAvatarStyle = Pick<CSSProperties, 'backgroundColor' | 'color'>
 
+const avatarPigments = ['--chart-1', '--chart-2', '--chart-3']
+
 function hashString(value: string): number {
   let hash = 0
   for (let i = 0; i < value.length; i++) {
@@ -29,14 +31,10 @@ function hashString(value: string): number {
 }
 
 export function getUserAvatarStyle(name: string): UserAvatarStyle {
-  const hash = hashString(name)
-  const hue = hash % 360
-  const saturation = 54 + (hash % 8)
-  const lightness = 52 + ((hash >> 4) % 8)
-
+  const pigment = avatarPigments[hashString(name) % avatarPigments.length]
   return {
-    backgroundColor: `hsl(${hue} ${saturation}% ${lightness}%)`,
-    color: 'white',
+    backgroundColor: `color-mix(in srgb, var(${pigment}) 24%, var(--card))`,
+    color: 'var(--card-foreground)',
   }
 }
 

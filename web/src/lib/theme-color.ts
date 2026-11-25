@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 /**
  * Resolve a theme color token (e.g. `--foreground`) to an `rgba()` string a
@@ -48,11 +48,19 @@ export function resolveThemeColor(cssVariable: string): string | undefined {
  * preset attribute on `<body>` are applied by provider effects that run after
  * this hook's, so the color is re-resolved when either attribute changes.
  */
-export function useThemeColor(cssVariable: string): string | undefined {
-  const [color, setColor] = useState<string | undefined>()
+export function useThemeColors(cssVariables: readonly string[]) {
+  const [colors, setColors] = useState<(string | undefined)[]>([])
 
   useEffect(() => {
-    const update = () => setColor(resolveThemeColor(cssVariable))
+    const update = () => {
+      const next = cssVariables.map(resolveThemeColor)
+      setColors((previous) =>
+        previous.length === next.length &&
+        previous.every((color, index) => color === next[index])
+          ? previous
+          : next
+      )
+    }
     update()
 
     const observer = new MutationObserver(update)
@@ -65,7 +73,12 @@ export function useThemeColor(cssVariable: string): string | undefined {
       attributeFilter: ['data-theme-preset'],
     })
     return () => observer.disconnect()
-  }, [cssVariable])
+  }, [cssVariables])
 
-  return color
+  return colors
+}
+
+export function useThemeColor(cssVariable: string): string | undefined {
+  const cssVariables = useMemo(() => [cssVariable], [cssVariable])
+  return useThemeColors(cssVariables)[0]
 }

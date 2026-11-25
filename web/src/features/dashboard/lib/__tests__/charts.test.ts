@@ -21,7 +21,19 @@ import { describe, expect, test } from 'vitest'
 import type { QuotaDataItem } from '@/features/dashboard/types'
 import type { TimeGranularity } from '@/lib/time'
 
-import { processChartData, processUserChartData } from '../charts'
+import {
+  getDashboardChartColors,
+  processChartData,
+  processUserChartData,
+} from '../charts'
+
+test('uses the chosen chart palette first and keeps additional series distinct', () => {
+  const palette = ['#794b2d', '#50663c', '#456f85', '#87631d', '#76536a']
+  const colors = getDashboardChartColors(8, palette).slice(0, 8)
+
+  expect(colors.slice(0, palette.length)).toEqual(palette)
+  expect(new Set(colors).size).toBe(8)
+})
 
 const cases: Array<{
   granularity: TimeGranularity

@@ -67,8 +67,10 @@ import {
   buildQueryParams,
   flowNodeFilterFromSankeyDatum,
   flowSankeyDatumValue,
+  getDashboardChartColors,
   getDefaultDays,
   getFlowStages,
+  useDashboardChartAppearance,
 } from '@/features/dashboard/lib'
 import {
   compactFlowSelectionLabel,
@@ -258,6 +260,8 @@ export function FlowCharts(props: FlowChartsProps) {
   const { t } = useTranslation()
   const { resolvedTheme, themeReady } = useChartTheme()
   const textColor = useThemeColor('--foreground')
+  const { palette: chartPalette, theme: chartTheme } =
+    useDashboardChartAppearance(resolvedTheme)
   const chartInstanceRef = useRef<IVChart | null>(null)
   const user = useAuthStore((state) => state.auth.user)
   const isRoot = Boolean(user?.role && user.role >= ROLE.SUPER_ADMIN)
@@ -357,6 +361,7 @@ export function FlowCharts(props: FlowChartsProps) {
         activeLink: activeFlowLink,
         visibleStages,
         topNodeLimit,
+        colorPalette: getDashboardChartColors(topNodeLimit, chartPalette),
         overflowMode,
         maskSensitive,
         deletedTokenLabel: (tokenId) => t('Deleted ({{id}})', { id: tokenId }),
@@ -375,6 +380,7 @@ export function FlowCharts(props: FlowChartsProps) {
       topNodeLimit,
       visibleStages,
       maskSensitive,
+      chartPalette,
       t,
     ]
   )
@@ -472,7 +478,6 @@ export function FlowCharts(props: FlowChartsProps) {
       ),
     [chartTitle, flowData.flow, t, textColor]
   )
-  const chartTheme = resolvedTheme === 'dark' ? 'dark' : 'light'
   const chartKey = [
     metric,
     topNodeLimit,

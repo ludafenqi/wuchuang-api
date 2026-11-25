@@ -150,6 +150,59 @@ server.on('request', (req, res) => {
 })
 const results = []
 const errors = []
+
+async function renderedContrast(locator, part = 'text') {
+  return locator.evaluate((element, part) => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    const surfaces = []
+    const style = getComputedStyle(element)
+    let surface = part === 'focus' ? element.parentElement : element
+    while (surface) {
+      surfaces.unshift(getComputedStyle(surface).backgroundColor)
+      surface = surface.parentElement
+    }
+    const luminance = () => {
+      const [r, g, b] = Array.from(
+        context.getImageData(0, 0, 1, 1).data,
+        (v) => {
+          const srgb = v / 255
+          return srgb <= 0.04045
+            ? srgb / 12.92
+            : ((srgb + 0.055) / 1.055) ** 2.4
+        }
+      )
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    }
+    for (const color of ['white', ...surfaces]) {
+      context.fillStyle = color
+      context.fillRect(0, 0, 1, 1)
+    }
+    const background = luminance()
+    const ink =
+      part === 'placeholder'
+        ? getComputedStyle(element, '::placeholder')
+        : style
+    if (
+      part === 'focus' &&
+      (!element.matches(':focus-visible') ||
+        style.outlineStyle === 'none' ||
+        parseFloat(style.outlineWidth) < 2)
+    ) {
+      return 0
+    }
+    context.fillStyle = part === 'focus' ? style.outlineColor : ink.color
+    context.globalAlpha = Number(ink.opacity)
+    context.fillRect(0, 0, 1, 1)
+    const foreground = luminance()
+    return (
+      (Math.max(background, foreground) + 0.05) /
+      (Math.min(background, foreground) + 0.05)
+    )
+  }, part)
+}
+
 let browser
 try {
   await new Promise((resolve, reject) => {
@@ -294,6 +347,19 @@ try {
         )
         if (route === '/') {
           assert.ok(await page.locator('main h1').isVisible())
+          const description = await renderedContrast(
+            page.locator('.wucora-hero-description')
+          )
+          const action = await renderedContrast(
+            page
+              .locator('.wucora-hero .wucora-actions [data-slot="button"]')
+              .first()
+          )
+          assert.ok(
+            description >= 4.5,
+            `Homepage description contrast: ${description}`
+          )
+          assert.ok(action >= 4.5, `Homepage action contrast: ${action}`)
           const art = await page
             .locator('.wucora-aperture')
             .evaluate(async (frame) => {
@@ -319,6 +385,19 @@ try {
         }
         if (route === '/pricing') {
           await page.getByText('gpt-4o-mini', { exact: true }).first().waitFor()
+          const search = page.getByRole('textbox', { name: 'Search models' })
+          const placeholder = await renderedContrast(search, 'placeholder')
+          assert.ok(
+            placeholder >= 4.5,
+            `Model search placeholder contrast: ${placeholder}`
+          )
+          await search.focus()
+          const focus = await renderedContrast(search, 'focus')
+          assert.ok(
+            focus >= 3,
+            `Model search keyboard focus contrast: ${focus}`
+          )
+          await search.blur()
         }
         if (route === '/sign-in') {
           const form = page.locator('.wcai-auth-panel')

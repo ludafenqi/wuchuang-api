@@ -22,51 +22,57 @@ For commercial licensing, please contact support@quantumnous.com
 :root {
   --background: #f2ebdf;
   --foreground: #30271e;
-  --card: #fffaf1;
+  --card: #fbf6ea;
   --card-foreground: #30271e;
-  --popover: #fffaf1;
+  --popover: #fffbf2;
   --popover-foreground: #30271e;
-  --primary: #814629;
+  --primary: #794b2d;
   --primary-foreground: #fffaf0;
-  --secondary: #e6e8db;
-  --secondary-foreground: #38422e;
-  --muted: #eee4d5;
-  --muted-foreground: #655748;
-  --accent: #ebdbc8;
-  --accent-foreground: #493321;
+  --secondary: #e4e7d7;
+  --secondary-foreground: #38472f;
+  --muted: #ebe1d0;
+  --muted-foreground: #615442;
+  --accent: #e9dcc5;
+  --accent-foreground: #49341f;
   --destructive: #a02f35;
   --destructive-foreground: #fffaf1;
-  --success: #466441;
+  --success: #42613b;
   --success-foreground: #fffaf1;
-  --warning: #e8bf77;
-  --warning-foreground: #3b2515;
-  --info: #3f6374;
+  --warning: #805a1c;
+  --warning-foreground: #fff7e8;
+  --info: #436779;
   --info-foreground: #fffaf1;
-  --border: #cdbba4;
-  --input: #9f8a73;
-  --ring: #89522d;
-  --chart-1: #89512f;
-  --chart-2: #516747;
-  --chart-3: #486b80;
-  --chart-4: #80622b;
-  --chart-5: #835667;
-  --sidebar: #eae0d1;
+  --neutral: #6c6150;
+  --neutral-foreground: #fffaf1;
+  --border: #c9b99f;
+  --input: #8a755d;
+  --ring: #865227;
+  --chart-1: #8c4d30;
+  --chart-2: #50663c;
+  --chart-3: #456f85;
+  --chart-4: #87631d;
+  --chart-5: #76536a;
+  --sidebar: #e9dfcf;
   --sidebar-foreground: #473a2e;
   --sidebar-primary: var(--primary);
   --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: #dfcbb3;
+  --sidebar-accent: #e1cfb4;
   --sidebar-accent-foreground: #4a301d;
   --skeleton-base: #ebdfcd;
   --skeleton-highlight: #f8efe2;
 
-  --oil-glaze: #ba884322;
+  --oil-glaze: #a9814220;
   --oil-thread: #89694408;
   --oil-thread-highlight: #fffcf428;
   --oil-frame-edge: #9b784e;
   --oil-frame-light: #fffbef;
   --oil-shadow: #47321d27;
-  --oil-night: #303a33;
+  --oil-night: #333c32;
+  --oil-night-surface: #2b342b;
   --oil-night-text: #fff4de;
+  --oil-night-muted: #dedecb;
+  --oil-night-line: #7b8471;
+  --oil-night-code: #abd0da;
   --oil-weave:
     repeating-linear-gradient(
       0deg,
@@ -86,34 +92,36 @@ For commercial licensing, please contact support@quantumnous.com
 :root.dark {
   --background: #221e1a;
   --foreground: #f2e9d9;
-  --card: #2c2621;
+  --card: #2d2720;
   --card-foreground: #f2e9d9;
-  --popover: #352d26;
+  --popover: #383027;
   --popover-foreground: #f2e9d9;
-  --primary: #e8b484;
+  --primary: #e3b68a;
   --primary-foreground: #352013;
   --secondary: #353d30;
   --secondary-foreground: #e0e8cf;
-  --muted: #3a3129;
-  --muted-foreground: #cbbba7;
-  --accent: #47382a;
+  --muted: #3b3228;
+  --muted-foreground: #d3c4ae;
+  --accent: #4a3c2e;
   --accent-foreground: #f5dfc7;
   --destructive: #ffa3a0;
   --destructive-foreground: #461b19;
   --success: #a5c597;
   --success-foreground: #233520;
-  --warning: #efc780;
+  --warning: #edc687;
   --warning-foreground: #3b2515;
   --info: #a4c5d4;
   --info-foreground: #223744;
-  --border: #5a4a3b;
-  --input: #8a7561;
-  --ring: #e8b484;
-  --chart-1: #e8b484;
-  --chart-2: #a8bd8d;
-  --chart-3: #94b9cf;
-  --chart-4: #e0cb88;
-  --chart-5: #d5a5bb;
+  --neutral: #c2b49e;
+  --neutral-foreground: #29231b;
+  --border: #61503f;
+  --input: #9a826a;
+  --ring: #e3b68a;
+  --chart-1: #dc9b75;
+  --chart-2: #a4bb85;
+  --chart-3: #87b7cf;
+  --chart-4: #e2cb79;
+  --chart-5: #c6a4bb;
   --sidebar: #29231e;
   --sidebar-foreground: #e4d7c6;
   --sidebar-accent: #4a3829;
@@ -128,6 +136,7 @@ For commercial licensing, please contact support@quantumnous.com
   --oil-frame-light: #ffffff12;
   --oil-shadow: #0008;
   --oil-night: #262c27;
+  --oil-night-surface: #303830;
 }
 
 .wucora-landing,
@@ -218,24 +227,29 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .wucora-landing {
+  --home-soft: var(--muted);
   --home-night: var(--oil-night);
   --home-night-text: var(--oil-night-text);
-  --home-night-muted: #d7dac9;
+  --home-night-muted: var(--oil-night-muted);
 }
 
 .wucora-landing-header .wucora-nav-frame {
-  background: color-mix(in oklch, var(--card) 96%, transparent);
+  background: var(--card);
 }
 
 .wucora-integration {
-  --border: #7b8473;
-  --input: #7b8473;
-  --accent: #444e43;
+  --border: var(--oil-night-line);
+  --input: var(--oil-night-line);
+  --accent: var(--oil-night-surface);
 }
 
 .wucora-connection-panel {
-  border-color: #697362;
-  background: #272f28;
+  border-color: var(--oil-night-line);
+  background: var(--oil-night-surface);
+}
+
+.wucora-connection-panel pre {
+  background: color-mix(in srgb, var(--oil-night) 76%, #121510);
 }
 
 .wcai-auth {
@@ -250,7 +264,7 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .wcai-auth-flow {
-  background: #252e26d9;
+  background: color-mix(in srgb, var(--oil-night-surface) 85%, transparent);
 }
 
 .wcai-auth-panel {
@@ -307,6 +321,15 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 [data-slot='button']:not(:disabled):not([aria-disabled='true']):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+:is(
+    [data-slot='input'],
+    [data-slot='textarea'],
+    [data-slot='select-trigger']
+  ):not(:disabled):not([aria-invalid='true']):focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }

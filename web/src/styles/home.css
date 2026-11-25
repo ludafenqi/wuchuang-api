@@ -434,7 +434,7 @@ For commercial licensing, please contact support@quantumnous.com
   align-items: center;
   gap: 12px;
   padding: 20px 24px;
-  border-bottom: 1px solid #455571;
+  border-bottom: 1px solid var(--border);
   font-size: 13px;
 }
 .wucora-panel-heading svg {
@@ -463,7 +463,7 @@ For commercial licensing, please contact support@quantumnous.com
   overflow-wrap: anywhere;
 }
 .wucora-base-url strong {
-  color: #a8baff;
+  color: var(--oil-night-code, var(--home-night-muted));
   font-weight: normal;
 }
 .wucora-connection-panel pre {
@@ -471,7 +471,7 @@ For commercial licensing, please contact support@quantumnous.com
   padding: 18px;
   max-width: calc(100% - 48px);
   overflow: auto;
-  border: 1px solid #3d4b63;
+  border: 1px solid var(--border);
   border-radius: 10px;
   background: #0002;
   font-size: 12px;
