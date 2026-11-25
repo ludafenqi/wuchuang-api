@@ -1,0 +1,342 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+
+/* The default WuCora palette. Named presets and explicit user preferences
+   still override inherited colors, typography, radius and density. */
+:root {
+  --background: #f2ebdf;
+  --foreground: #30271e;
+  --card: #fffaf1;
+  --card-foreground: #30271e;
+  --popover: #fffaf1;
+  --popover-foreground: #30271e;
+  --primary: #814629;
+  --primary-foreground: #fffaf0;
+  --secondary: #e6e8db;
+  --secondary-foreground: #38422e;
+  --muted: #eee4d5;
+  --muted-foreground: #655748;
+  --accent: #ebdbc8;
+  --accent-foreground: #493321;
+  --destructive: #a02f35;
+  --destructive-foreground: #fffaf1;
+  --success: #466441;
+  --success-foreground: #fffaf1;
+  --warning: #e8bf77;
+  --warning-foreground: #3b2515;
+  --info: #3f6374;
+  --info-foreground: #fffaf1;
+  --border: #cdbba4;
+  --input: #9f8a73;
+  --ring: #89522d;
+  --chart-1: #89512f;
+  --chart-2: #516747;
+  --chart-3: #486b80;
+  --chart-4: #80622b;
+  --chart-5: #835667;
+  --sidebar: #eae0d1;
+  --sidebar-foreground: #473a2e;
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: #dfcbb3;
+  --sidebar-accent-foreground: #4a301d;
+  --skeleton-base: #ebdfcd;
+  --skeleton-highlight: #f8efe2;
+
+  --oil-glaze: #ba884322;
+  --oil-thread: #89694408;
+  --oil-thread-highlight: #fffcf428;
+  --oil-frame-edge: #9b784e;
+  --oil-frame-light: #fffbef;
+  --oil-shadow: #47321d27;
+  --oil-night: #303a33;
+  --oil-night-text: #fff4de;
+  --oil-weave:
+    repeating-linear-gradient(
+      0deg,
+      var(--oil-thread) 0 1px,
+      transparent 1px 4px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      var(--oil-thread-highlight) 0 1px,
+      transparent 1px 5px
+    );
+  --oil-frame-shadow:
+    inset 0 1px var(--oil-frame-light), 0 2px 4px -3px var(--oil-shadow),
+    0 12px 28px -21px var(--oil-shadow);
+}
+
+:root.dark {
+  --background: #221e1a;
+  --foreground: #f2e9d9;
+  --card: #2c2621;
+  --card-foreground: #f2e9d9;
+  --popover: #352d26;
+  --popover-foreground: #f2e9d9;
+  --primary: #e8b484;
+  --primary-foreground: #352013;
+  --secondary: #353d30;
+  --secondary-foreground: #e0e8cf;
+  --muted: #3a3129;
+  --muted-foreground: #cbbba7;
+  --accent: #47382a;
+  --accent-foreground: #f5dfc7;
+  --destructive: #ffa3a0;
+  --destructive-foreground: #461b19;
+  --success: #a5c597;
+  --success-foreground: #233520;
+  --warning: #efc780;
+  --warning-foreground: #3b2515;
+  --info: #a4c5d4;
+  --info-foreground: #223744;
+  --border: #5a4a3b;
+  --input: #8a7561;
+  --ring: #e8b484;
+  --chart-1: #e8b484;
+  --chart-2: #a8bd8d;
+  --chart-3: #94b9cf;
+  --chart-4: #e0cb88;
+  --chart-5: #d5a5bb;
+  --sidebar: #29231e;
+  --sidebar-foreground: #e4d7c6;
+  --sidebar-accent: #4a3829;
+  --sidebar-accent-foreground: #fce2c6;
+  --skeleton-base: #372d25;
+  --skeleton-highlight: #493d32;
+
+  --oil-glaze: #d2a37015;
+  --oil-thread: #0502001b;
+  --oil-thread-highlight: #f3cb980c;
+  --oil-frame-edge: #a18360;
+  --oil-frame-light: #ffffff12;
+  --oil-shadow: #0008;
+  --oil-night: #262c27;
+}
+
+.wucora-landing,
+.wcai-public,
+.wcai-auth,
+.wcai-console {
+  background-image: var(--oil-weave);
+}
+
+.wucora-hero {
+  background:
+    radial-gradient(ellipse at 83% 46%, var(--oil-glaze), transparent 59%),
+    radial-gradient(ellipse at 0% 0%, var(--oil-glaze), transparent 46%);
+}
+
+.wucora-hero h1,
+.wucora-landing section h2,
+.wcai-auth-story h1,
+.wcai-auth-panel h2,
+.wcai-console h1,
+.wcai-public h1 {
+  font-family: var(--oil-display, var(--font-serif));
+  letter-spacing: -0.035em;
+}
+
+[data-theme-font='sans'],
+[data-theme-font='serif'] {
+  --oil-display: var(--font-body);
+}
+
+.wucora-hero h1 {
+  font-size: clamp(2.75rem, 5vw, 4.75rem);
+  line-height: 1.1;
+}
+
+.wucora-hero h1 em {
+  font-style: italic;
+}
+
+.wucora-aperture {
+  aspect-ratio: 1.15;
+  border: 5px ridge var(--oil-frame-edge);
+  border-radius: 3px;
+  background: var(--card);
+  box-shadow:
+    var(--oil-frame-shadow),
+    0 22px 48px -25px var(--oil-shadow);
+}
+
+.wucora-aperture::before {
+  inset: 7px;
+  border: 1px solid var(--oil-frame-edge);
+  border-radius: 0;
+  background: url('./oil-study.webp') center / cover;
+}
+
+.dark .wucora-aperture::before {
+  background-image:
+    linear-gradient(#28201931, #1a201b46), url('./oil-study.webp');
+}
+
+.wucora-orbit {
+  display: none;
+  animation: none;
+}
+
+.wucora-aperture-core {
+  width: clamp(5.5rem, 34%, 9rem);
+  gap: 0.35rem;
+  border-radius: 4px;
+  background: var(--card);
+  box-shadow: var(--oil-frame-shadow);
+}
+
+.wucora-orbit-node {
+  border-radius: 4px;
+  background: var(--card);
+  box-shadow: var(--oil-frame-shadow);
+}
+
+.wucora-node-network {
+  right: 8%;
+}
+
+.wucora-hero .wucora-section-index,
+.wucora-start {
+  background-image: var(--oil-weave);
+}
+
+.wucora-landing {
+  --home-night: var(--oil-night);
+  --home-night-text: var(--oil-night-text);
+  --home-night-muted: #d7dac9;
+}
+
+.wucora-landing-header .wucora-nav-frame {
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+}
+
+.wucora-integration {
+  --border: #7b8473;
+  --input: #7b8473;
+  --accent: #444e43;
+}
+
+.wucora-connection-panel {
+  border-color: #697362;
+  background: #272f28;
+}
+
+.wcai-auth {
+  background-color: var(--background);
+}
+
+.wcai-auth-story {
+  background:
+    linear-gradient(#222a24c9, #202721f0),
+    var(--oil-night) url('./oil-study.webp') center / cover;
+  color: var(--oil-night-text);
+}
+
+.wcai-auth-flow {
+  background: #252e26d9;
+}
+
+.wcai-auth-panel {
+  padding: clamp(1rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  box-shadow: var(--oil-frame-shadow);
+  box-sizing: border-box;
+}
+
+.wcai-credit {
+  --wcai-brand-deep: var(--oil-night);
+  --muted-foreground: #e6dfc9;
+  background-image: linear-gradient(140deg, #e4be7918, transparent 75%);
+}
+
+.wcai-credit [data-slot='button'] {
+  background: #fff5e4;
+  color: #3a4332;
+}
+
+.wcai-credit [data-slot='button']:hover {
+  background: #ebdfca;
+}
+
+/* Existing component slots carry the frame finish, including portal content.
+   Opaque surfaces keep charts, code, form controls and data rows readable. */
+:is(
+  .wcai-app-header,
+  .wcai-public-header,
+  .wucora-landing-header .wucora-nav-frame,
+  .wcai-chart-panel,
+  .wcai-usage-metrics,
+  .wcai-credit,
+  .wcai-model-card,
+  .wcai-model-header,
+  [data-slot='card'],
+  [data-slot='dialog-content'],
+  [data-slot='alert-dialog-content'],
+  [data-slot='popover-content'],
+  [data-slot='dropdown-menu-content'],
+  [data-slot='select-content']
+) {
+  box-shadow: var(--oil-frame-shadow);
+}
+
+:is([data-slot='sidebar-inner'], [data-slot='sidebar'][data-mobile='true']) {
+  background-image: var(--oil-weave);
+}
+
+:is([data-slot='input'], [data-slot='textarea'], [data-slot='input-group']) {
+  box-shadow: inset 0 1px 2px var(--oil-shadow);
+}
+
+[data-slot='button']:not(:disabled):not([aria-disabled='true']):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+[data-slot='table-header'] {
+  box-shadow: inset 0 -1px var(--border);
+}
+
+@media (max-width: 639px) {
+  .wucora-hero h1 {
+    font-size: clamp(2rem, 9vw, 2.75rem);
+  }
+
+  .wucora-aperture {
+    overflow: visible;
+  }
+
+  .wcai-auth-panel {
+    padding-inline: clamp(0.75rem, 3vw, 1.25rem);
+  }
+}
+
+@media (forced-colors: active) {
+  :root {
+    --oil-weave: none;
+    --oil-frame-shadow: none;
+  }
+
+  .wucora-aperture,
+  .wcai-auth-panel {
+    border-color: CanvasText;
+  }
+}

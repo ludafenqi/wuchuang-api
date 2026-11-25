@@ -32,6 +32,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 @import './cloud.css';
 @import './home.css';
+@import './oil-painting.css';
 
 /* Preview theme is local, so a light preview remains light in a dark dashboard. */
 .footer-preview-light {

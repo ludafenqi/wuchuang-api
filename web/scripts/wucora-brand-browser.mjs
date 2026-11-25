@@ -514,33 +514,58 @@ try {
       images: await imageInfo(page),
       favicon: expectedIcon,
     })
-    await page
-      .getByLabel('Logo URL', { exact: true })
-      .fill(`${customOrigin}/missing-brand.png`)
-    await page
-      .getByRole('button', { name: 'Save Changes', exact: true })
-      .first()
-      .click()
-    await checkIcon(page, expectedIcon)
+    const missingLogo = `${customOrigin}/missing-brand.png`
+    await page.getByLabel('Logo URL', { exact: true }).fill(missingLogo)
+    // The default icon and compact logo are already present after clearing the
+    // previous logo. Observe the new failure before waiting for their fallback.
+    const [missingResponse] = await Promise.all([
+      page.waitForResponse((response) => response.url() === missingLogo),
+      page
+        .getByRole('button', { name: 'Save Changes', exact: true })
+        .first()
+        .click(),
+    ])
+    assert.equal(missingResponse.status(), 404)
     await ready(page)
-    await page.waitForFunction(() =>
-      [...document.images]
-        .filter((x) => x.getAttribute('src') === '/wucora-logo-128.webp')
-        .some((x) => x.complete && x.naturalWidth === 128)
+    await page.waitForFunction(
+      ({ compact, decoration, icon }) => {
+        const images = [...document.images].filter((image) => {
+          const rect = image.getBoundingClientRect()
+          return (
+            /wucora-logo|missing-brand/.test(image.src) &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            getComputedStyle(image).visibility !== 'hidden'
+          )
+        })
+        return (
+          document.querySelector('link[rel~="icon"]')?.getAttribute('href') ===
+            icon &&
+          images.some(
+            (image) =>
+              image.getAttribute('src') === compact &&
+              image.naturalWidth === 128 &&
+              getComputedStyle(image).opacity === '1'
+          ) &&
+          images.every(
+            (image) =>
+              [compact, decoration].includes(image.getAttribute('src')) &&
+              image.complete &&
+              image.naturalWidth > 0
+          )
+        )
+      },
+      {
+        compact: expectedCompact,
+        decoration: expectedDecoration,
+        icon: expectedIcon,
+      }
     )
     const options = await admin.request
       .get(`${origin}/api/option/`, { headers })
       .then((r) => r.json())
-    assert.equal(
-      options.data.find((x) => x.key === 'Logo').value,
-      `${customOrigin}/missing-brand.png`
-    )
+    assert.equal(options.data.find((x) => x.key === 'Logo').value, missingLogo)
     const failureImages = await imageInfo(page)
-    assert.ok(
-      failureImages
-        .filter((image) => image.visible)
-        .every((image) => image.complete && image.naturalWidth > 0)
-    )
     results.push({
       scenario: 'failed-custom-visible-and-icon-fallback-with-config-retained',
       status: 'PASS',
