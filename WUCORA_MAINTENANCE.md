@@ -153,6 +153,13 @@ PR #18 的五项上游更新按原实现接入，其中缓存类别仅展示、�
 | GitHub PR 事件批准 | GITHUB_TOKEN 创建或更新 PR 后，GitHub 可能要求维护者选择 Approve workflows to run；用正常运行批准接口补齐，不改仓库安全设置或删检查 | PR #18 的批准与绿灯保留作历史。本轮正常批准 44286047015、44286046817；候选补充后必须按新 SHA 重跑，不能沿用旧 SHA 的绿灯 |
 | 固定镜像与实际拉取 | `.github/workflows/wuchuang-publish-ghcr.yml` 只从审查后的准确 main 构建，发布 ghcr.io/ludafenqi/wuchuang-api:sha-完整SHA；记录 registry index/平台摘要和 revision，再按摘要拉取隔离运行与页面验证 | 不能以本地 image ID 或旧镜像代替 registry digest；本轮不额外移动 latest 标签 |
 
+## 油画主题维护
+
+- 默认明暗调色、亚麻纹理、画框边缘和共享组件外观集中在 `web/src/styles/oil-painting.css`，由 `web/src/styles/index.css` 最后引入。既有主题预设和显式字体、圆角、密度选择继续使用原设置入口。
+- `web/src/styles/oil-study.webp` 是项目本地的原创油画装饰图，用于首页画框和桌面认证侧栏。它不替换 WuCora logo、favicon、品牌配置或源项目归属。表格行、输入和弹窗使用实色，图表沿用主题色变量。
+- 后续同步复核已有 `wucora-*`、`wcai-*` 和共享组件 `data-slot` 挂接点。优先适配选择器和语义变量，保留上游组件行为。在 320、390、1440 像素宽度的明暗模式下检查首页、认证、定价、控制台及管理界面。保留现有功能和品牌门禁，另检查画作本地加载及认证表单键盘顺序。
+- 改版前 Git 回退点为 `e6345d826a7f6d7d916aa78edf36cd1f0db521be`，对应此前正式镜像及其固定摘要记录。
+
 ## 每轮操作顺序
 
 1. **固定上游版本**：干净隔离分支 fetch，记录 fork base、完整上游 SHA、新增提交、定制交叉点和原工作区哈希；保护所有旧 worktree，不追赶实施中新增的上游批次。

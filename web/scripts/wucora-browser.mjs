@@ -292,11 +292,46 @@ try {
           ),
           `${route} overflow at ${width}/${theme}`
         )
-        if (route === '/') assert.ok(await page.locator('main h1').isVisible())
+        if (route === '/') {
+          assert.ok(await page.locator('main h1').isVisible())
+          const art = await page
+            .locator('.wucora-aperture')
+            .evaluate(async (frame) => {
+              const style = getComputedStyle(frame, '::before')
+              const url = style.backgroundImage.match(/url\("([^"]+)"\)/)?.[1]
+              if (
+                !url ||
+                new URL(url, location.href).origin !== location.origin
+              ) {
+                return false
+              }
+              const painting = new Image()
+              painting.src = url
+              await painting.decode()
+              return (
+                painting.naturalWidth >= 400 && style.borderRadius === '0px'
+              )
+            })
+          assert.ok(
+            art,
+            'The framed oil painting is decoded from a local asset'
+          )
+        }
         if (route === '/pricing') {
           await page.getByText('gpt-4o-mini', { exact: true }).first().waitFor()
         }
         if (route === '/sign-in') {
+          const form = page.locator('.wcai-auth-panel')
+          const username = form.getByPlaceholder('Enter your username or email')
+          await username.focus()
+          await page.keyboard.press('Tab')
+          assert.equal(
+            await page.evaluate(() =>
+              document.activeElement?.getAttribute('type')
+            ),
+            'password',
+            'The framed form retains keyboard order from username to password'
+          )
           await page
             .getByRole('button', { name: 'Show password', exact: true })
             .click()
