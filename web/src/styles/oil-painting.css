@@ -60,8 +60,8 @@ For commercial licensing, please contact support@quantumnous.com
   --skeleton-highlight: #f8efe2;
 
   --oil-glaze: #ba884322;
-  --oil-thread: #8969440c;
-  --oil-thread-highlight: #fffcf45c;
+  --oil-thread: #89694408;
+  --oil-thread-highlight: #fffcf428;
   --oil-frame-edge: #9b784e;
   --oil-frame-light: #fffbef;
   --oil-shadow: #47321d27;
@@ -123,7 +123,7 @@ For commercial licensing, please contact support@quantumnous.com
 
   --oil-glaze: #d2a37015;
   --oil-thread: #0502001b;
-  --oil-thread-highlight: #f3cb9820;
+  --oil-thread-highlight: #f3cb980c;
   --oil-frame-edge: #a18360;
   --oil-frame-light: #ffffff12;
   --oil-shadow: #0008;
@@ -153,7 +153,6 @@ For commercial licensing, please contact support@quantumnous.com
   letter-spacing: -0.035em;
 }
 
-[data-theme-font='system'],
 [data-theme-font='sans'],
 [data-theme-font='serif'] {
   --oil-display: var(--font-body);
@@ -219,13 +218,29 @@ For commercial licensing, please contact support@quantumnous.com
 }
 
 .wucora-hero .wucora-section-index,
-.wucora-start,
-.wcai-credit {
+.wucora-start {
   background-image: var(--oil-weave);
 }
 
 .wucora-landing {
   --home-night: var(--oil-night);
+  --home-night-text: var(--oil-night-text);
+  --home-night-muted: #d7dac9;
+}
+
+.wucora-landing-header .wucora-nav-frame {
+  background: color-mix(in oklch, var(--card) 96%, transparent);
+}
+
+.wucora-integration {
+  --border: #7b8473;
+  --input: #7b8473;
+  --accent: #444e43;
+}
+
+.wucora-connection-panel {
+  border-color: #697362;
+  background: #272f28;
 }
 
 .wcai-auth {
@@ -255,6 +270,7 @@ For commercial licensing, please contact support@quantumnous.com
 .wcai-credit {
   --wcai-brand-deep: var(--oil-night);
   --muted-foreground: #e6dfc9;
+  background-image: linear-gradient(140deg, #e4be7918, transparent 75%);
 }
 
 .wcai-credit [data-slot='button'] {
