@@ -162,7 +162,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 <div className='text-muted-foreground mt-1 font-mono text-base leading-tight font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl sm:leading-normal'>
                   --
                 </div>
-                <div className='text-muted-foreground/40 mt-1 hidden text-xs md:block'>
+                <div className='text-muted-foreground mt-1 hidden text-xs md:block'>
                   {it.desc}
                 </div>
               </>
@@ -176,7 +176,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 >
                   {it.value}
                 </div>
-                <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
+                <div className='text-muted-foreground mt-1 hidden text-xs md:block'>
                   {it.desc}
                 </div>
               </>

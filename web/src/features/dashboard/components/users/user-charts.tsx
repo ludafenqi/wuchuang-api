@@ -35,6 +35,7 @@ import {
   getDefaultDays,
   saveGranularity,
   processUserChartData,
+  useDashboardChartAppearance,
 } from '@/features/dashboard/lib'
 import type {
   ProcessedUserChartData,
@@ -75,6 +76,8 @@ interface UserChartsProps {
 export function UserCharts(props: UserChartsProps) {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
+  const { palette: chartPalette, theme: chartTheme } =
+    useDashboardChartAppearance(resolvedTheme)
   const [themeReady, setThemeReady] = useState(false)
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
@@ -151,9 +154,10 @@ export function UserCharts(props: UserChartsProps) {
         isLoading ? [] : (userData ?? []),
         timeGranularity,
         t,
-        topUserLimit
+        topUserLimit,
+        chartPalette
       ),
-    [userData, isLoading, timeGranularity, t, topUserLimit]
+    [userData, isLoading, timeGranularity, t, topUserLimit, chartPalette]
   )
 
   return (
@@ -249,7 +253,7 @@ export function UserCharts(props: UserChartsProps) {
                       key={`user-${chart.value}-${topUserLimit}-${resolvedTheme}`}
                       spec={{
                         ...spec,
-                        theme: resolvedTheme === 'dark' ? 'dark' : 'light',
+                        theme: chartTheme,
                         background: 'transparent',
                       }}
                       option={VCHART_OPTION}

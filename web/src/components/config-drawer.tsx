@@ -278,15 +278,12 @@ function PresetConfig() {
                 aria-hidden='true'
                 className='absolute inset-0 rounded-md'
                 style={{
-                  background:
-                    preset.value === 'default'
-                      ? 'linear-gradient(135deg, oklch(0.68 0.2 25) 0%, oklch(0.8 0.17 85) 25%, oklch(0.72 0.18 155) 50%, oklch(0.66 0.19 245) 75%, oklch(0.68 0.2 315) 100%)'
-                      : `linear-gradient(135deg, ${preset.swatches[0]} 0%, ${preset.swatches[1] ?? preset.swatches[0]} 100%)`,
+                  background: `linear-gradient(135deg, ${preset.swatches[0]} 0%, ${preset.swatches[1] ?? preset.swatches[0]} 100%)`,
                 }}
               />
               <CircleCheck
                 className={cn(
-                  'fill-primary absolute top-0 right-0 z-10 size-5 translate-x-1/2 -translate-y-1/2 stroke-white',
+                  'fill-primary stroke-primary-foreground absolute top-0 right-0 z-10 size-5 translate-x-1/2 -translate-y-1/2',
                   'group-data-unchecked:hidden'
                 )}
                 aria-hidden='true'

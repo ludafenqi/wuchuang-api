@@ -1,3 +1,4 @@
+import type { ITheme } from '@visactor/vchart'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,6 +18,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { dataScheme as vchartDefaultDataScheme } from '@visactor/vchart/esm/theme/color-scheme/builtin/default'
+import { useMemo } from 'react'
 
 import { MAX_CHART_TREND_POINTS } from '@/features/dashboard/constants'
 import type {
@@ -25,6 +27,7 @@ import type {
   ProcessedUserChartData,
 } from '@/features/dashboard/types'
 import { getCurrencyDisplay } from '@/lib/currency'
+import { useThemeColors } from '@/lib/theme-color'
 import { formatChartTime, type TimeGranularity } from '@/lib/time'
 
 type TFunction = (key: string) => string
@@ -39,15 +42,61 @@ type TooltipLineItem = {
   shapeSize?: number
 }
 
-export function getDashboardChartColors(domainLength: number): string[] {
+const dashboardChartTokens = [
+  '--chart-1',
+  '--chart-2',
+  '--chart-3',
+  '--chart-4',
+  '--chart-5',
+  '--muted-foreground',
+  '--border',
+  '--muted',
+  '--popover',
+  '--popover-foreground',
+]
+
+export function useDashboardChartAppearance(resolvedTheme: 'light' | 'dark') {
+  const colors = useThemeColors(dashboardChartTokens)
+  return useMemo(() => {
+    const [ink, line, grid, popup, popupInk] = colors.slice(5)
+    const palette = colors.slice(0, 5).filter((color) => color !== undefined)
+    if (!ink || !line || !grid || !popup || !popupInk) {
+      return { palette, theme: resolvedTheme }
+    }
+    const theme: ITheme = {
+      type: resolvedTheme,
+      colorScheme: {
+        default: {
+          dataScheme: vchartDefaultDataScheme,
+          palette: {
+            axisLabelFontColor: ink,
+            secondaryFontColor: ink,
+            tertiaryFontColor: ink,
+            axisDomainColor: line,
+            axisGridColor: grid,
+            popupBackgroundColor: popup,
+            primaryFontColor: popupInk,
+          },
+        },
+      },
+    }
+    return { palette, theme }
+  }, [colors, resolvedTheme])
+}
+
+export function getDashboardChartColors(
+  domainLength: number,
+  palette: readonly string[] = []
+): string[] {
   const scheme =
     vchartDefaultDataScheme.find(
       (item) => !item.maxDomainLength || domainLength <= item.maxDomainLength
     ) ?? vchartDefaultDataScheme.at(-1)
 
-  return (scheme?.scheme ?? []).filter(
+  const fallback = (scheme?.scheme ?? []).filter(
     (color): color is string => typeof color === 'string'
   )
+  return [...new Set([...palette, ...fallback])]
 }
 
 function renderQuotaCompat(rawQuota: number, digits = 4): string {
@@ -71,7 +120,8 @@ export function processChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  chartCornerRadius?: number
+  chartCornerRadius?: number,
+  palette?: readonly string[]
 ): ProcessedChartData {
   const tt: TFunction = t ?? ((x) => x)
   const otherLabel = tt('Other')
@@ -270,7 +320,10 @@ export function processChartData(
     .map(([time]) => time)
   const sortedModels = [...allModels].sort()
   const modelColorDomain = [...new Set([...sortedModels, otherLabel])]
-  const modelColorRange = getDashboardChartColors(modelColorDomain.length)
+  const modelColorRange = getDashboardChartColors(
+    modelColorDomain.length,
+    palette
+  )
   const otherColor = modelColorRange[modelColorDomain.indexOf(otherLabel)]
   const otherTooltipColor =
     typeof otherColor === 'string' ? otherColor : '#FF8A00'
@@ -710,11 +763,13 @@ export function processUserChartData(
   data: QuotaDataItem[],
   timeGranularity: TimeGranularity = 'day',
   t?: TFunction,
-  limit = 10
+  limit = 10,
+  palette: readonly string[] = []
 ): ProcessedUserChartData {
   const tt: TFunction = t ?? ((x) => x)
   const { config } = getCurrencyDisplay()
   const quotaPerUnit = config.quotaPerUnit
+  const userColors = [...new Set([...palette, ...USER_COLORS])]
 
   const formatVal = (raw: number) => renderQuotaCompat(raw, 2)
 
@@ -732,7 +787,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: false },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       background: { fill: 'transparent' },
     },
     spec_user_trend: {
@@ -747,7 +802,7 @@ export function processUserChartData(
         subtext: tt('No data available'),
       },
       legends: { visible: true, selectMode: 'single' },
-      color: { type: 'ordinal', range: USER_COLORS },
+      color: { type: 'ordinal', range: userColors },
       point: { visible: false },
       background: { fill: 'transparent' },
     },
@@ -775,7 +830,7 @@ export function processUserChartData(
 
   const userColorMap = topUsers.reduce<Record<string, string>>(
     (acc, user, i) => {
-      acc[user] = USER_COLORS[i % USER_COLORS.length]
+      acc[user] = userColors[i % userColors.length]
       return acc
     },
     {}
