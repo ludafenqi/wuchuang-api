@@ -202,11 +202,6 @@ For commercial licensing, please contact support@quantumnous.com
   box-shadow: var(--oil-frame-shadow);
 }
 
-.wucora-aperture-core img {
-  width: clamp(2.25rem, 5vw, 3.5rem);
-  height: auto;
-}
-
 .wucora-orbit-node {
   border-radius: 4px;
   background: var(--card);
