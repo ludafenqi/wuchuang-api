@@ -151,8 +151,10 @@ server.on('request', (req, res) => {
 const results = []
 const errors = []
 
-async function renderedContrast(locator, part = 'text') {
-  return locator.evaluate((element, part) => {
+async function renderedContrast(locator, part = 'text', fillColor) {
+  const sample = { part, fillColor }
+  return locator.evaluate((element, sample) => {
+    const { part, fillColor } = sample
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1
     const context = canvas.getContext('2d', { willReadFrequently: true })
@@ -192,7 +194,8 @@ async function renderedContrast(locator, part = 'text') {
     ) {
       return 0
     }
-    context.fillStyle = part === 'focus' ? style.outlineColor : ink.color
+    context.fillStyle =
+      fillColor ?? (part === 'focus' ? style.outlineColor : ink.color)
     context.globalAlpha = Number(ink.opacity)
     context.fillRect(0, 0, 1, 1)
     const foreground = luminance()
@@ -200,7 +203,72 @@ async function renderedContrast(locator, part = 'text') {
       (Math.max(background, foreground) + 0.05) /
       (Math.min(background, foreground) + 0.05)
     )
-  }, part)
+  }, sample)
+}
+
+async function checkRoseGardenChart(page) {
+  const usage = /\/api\/data(?:\/self)?(?:\?|$)/
+  const data = ['rose-a', 'rose-b'].map((model_name) => ({
+    model_name,
+    username: 'uiregression',
+    created_at: Math.floor(Date.now() / 1000),
+    quota: 500000,
+    count: 1,
+    token_used: 100,
+  }))
+  await page.route(usage, (route) =>
+    route.fulfill({ json: { success: true, data } })
+  )
+  const presetKey = 'newapi:theme:v1:preset'
+  await page.evaluate(
+    (key) => localStorage.setItem(key, 'rose-garden'),
+    presetKey
+  )
+  try {
+    await page.goto(`${origin}/dashboard/models`)
+    await page.waitForFunction(
+      () => document.body.dataset.themePreset === 'rose-garden'
+    )
+    const panel = page
+      .locator('.wcai-chart-panel')
+      .filter({ hasText: 'Quota Distribution' })
+    const canvas = panel.locator('canvas').first()
+    await canvas.waitFor()
+    // The two equal-size bars dominate the opaque pixels in the plot area.
+    const colors = await page.waitForFunction(
+      (canvas) => {
+        const { width, height } = canvas
+        if (!width || !height) return false
+        const pixels = canvas
+          .getContext('2d')
+          .getImageData(0, 0, width, height * 0.8).data
+        const counts = new Map()
+        for (let i = 0; i < pixels.length; i += 16) {
+          if (pixels[i + 3] !== 255) continue
+          const rgb = (pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2]
+          counts.set(rgb, (counts.get(rgb) ?? 0) + 1)
+        }
+        const top = [...counts].sort((a, b) => b[1] - a[1]).slice(0, 2)
+        if (top.length < 2 || top[1][1] < width * height * 0.002) return false
+        return top.map(([rgb]) => `#${rgb.toString(16).padStart(6, '0')}`)
+      },
+      await canvas.elementHandle()
+    )
+    await panel.screenshot({
+      path: path.join(output, 'rose-garden-light-chart.png'),
+      animations: 'disabled',
+    })
+    for (const color of await colors.jsonValue()) {
+      const ratio = await renderedContrast(panel, 'series', color)
+      assert.ok(
+        ratio >= 3,
+        `Rose Garden chart series ${color} contrast: ${ratio.toFixed(2)}`
+      )
+    }
+  } finally {
+    await page.evaluate((key) => localStorage.removeItem(key), presetKey)
+    await page.unroute(usage)
+  }
 }
 
 let browser
@@ -445,6 +513,16 @@ try {
         .post(`${origin}/api/user/login`, { data: credentials })
         .then((r) => r.json())
       assert.ok(login.success, 'Fixture sign-in must succeed')
+      if (!logoutOnly && width === 1440 && theme === 'light') {
+        await checkRoseGardenChart(page)
+        results.push({
+          route: '/dashboard/models',
+          theme,
+          width,
+          status: 'PASS',
+          scope: 'Rose Garden chart series contrast on the rendered panel',
+        })
+      }
       for (const route of logoutOnly
         ? ['/dashboard/overview']
         : [

@@ -139,6 +139,14 @@ For commercial licensing, please contact support@quantumnous.com
   --oil-night-surface: #303830;
 }
 
+body {
+  --dashboard-chart-2: var(--chart-2);
+}
+
+:root:not(.dark) body[data-theme-preset='rose-garden'] {
+  --dashboard-chart-2: #86557a;
+}
+
 .wucora-landing,
 .wcai-public,
 .wcai-auth,
